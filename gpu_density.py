@@ -15,157 +15,123 @@ import core, config
 
 logger = logging.getLogger(__name__)
 
-# TODO: Update the arguments. It seems that passing the kernel as a function 
-# might be complicated or create a big overhead. So, maybe define a set 
-# functions and a dictionary with their references?
-# See:
-# https://numba.pydata.org/numba-doc/dev/user/faq.html
-# https://numba.pydata.org/numba-doc/latest/reference/types.html#functions
-# https://numba.pydata.org/numba-doc/latest/user/jit.
-# html#signature-specifications
-# @cuda.jit(
-#     "(i8, f8[:], i8, u1[:], i8[:], f8[:], f8[:], f8[:],"
-#     "f8[:], f8[:], i8, i8, f8[:, :], b1)"
-# )
-def make_density_kernel(phi):
-    @cuda.jit(
-        "(i8, f8[:], i8, i8[:], f8[:], f8[:], f8[:],"
-        "f8[:], f8[:], i8, i8, f8[:], b1)")
-    def _compute_and_update_density_kernel(
-        i,
-        T,
-        m,   
-        splice,
-        QT_even,
-        QT_odd,
-        QT_first,
-        M_T,
-        Σ_T,
-        k,
-        excl_zone,
-        density,
-        compute_QT,
-        ):
-        """
-        A Numba CUDA kernel to update the density
 
-        Parameters
-        ----------
-        i : int
-            sliding window `i`
-
-        T : numpy.ndarray
-            The time series or sequence for which to compute the dot product
-
-        m : int
-            Window size
-
-        phi : function
-            Kernel (window) function used to estimate the density. It's a 
-            function of the squared distance between subsequences and it's expected 
-            to be a monotonically decreasing function.
-
-        splice : numpy.ndarray
-             If not None, T is the concatenation of multiple smaller time series 
-             (segments), and `splice` has the start indices of the second to the 
-             last segment, in the order of concatenation (from left to right).
-
-        QT_even : numpy.ndarray
-            The input QT array (dot product between the query sequence,`Q`, and
-            time series, `T`) to use when `i` is even
-
-        QT_odd : numpy.ndarray
-            The input QT array (dot product between the query sequence,`Q`, and
-            time series, `T`) to use when `i` is odd
-
-        QT_first : numpy.ndarray
-            Dot product between the first query sequence,`Q`, and time series, `T`
-
-        M_T : numpy.ndarray
-            Sliding mean of time series, `T`
-
-        Σ_T : numpy.ndarray
-            Sliding standard deviation of time series, `T`
-
-        k : int
-            The total number of sliding windows to iterate over
-
-        excl_zone : int
-            The half width for the exclusion zone relative to the current
-            sliding window
-
-        density : numpy.ndarray
-            Density of subsequences of length m in time series T
-
-        compute_QT : bool
-            A boolean flag for whether or not to compute QT
-
-        Returns
-        -------
-        None
-
-        Notes
-        -----
-        `DOI: 10.1109/ICDM.2016.0085 \
-        <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.    pdf>`__
-
-        See Table II, Figure 5, and Figure 6
-        """
-        start = cuda.grid(1)
-        stride = cuda.gridsize(1)
-
-        if i % 2 == 0:
-            QT_out = QT_even
-            QT_in = QT_odd
+#(
+    #"(i8, f8[:], i8, i8[:], f8[:], f8[:], f8[:], f8[:],"
+#    "f8[:], f8[:], i8, i8, f8[:], b1)")
+@cuda.jit
+def _compute_and_update_density_kernel(
+    i,
+    T,
+    m,
+    bw,
+    splice,    
+    QT_even,
+    QT_odd,
+    QT_first,
+    M_T,
+    Σ_T,
+    k,
+    excl_zone,
+    density,
+    compute_QT,
+    ):
+    """
+    A Numba CUDA kernel to update the density
+    Parameters
+    ----------
+    i : int
+        sliding window `i`
+    T : numpy.ndarray
+        The time series or sequence for which to compute the dot product
+    m : int
+        Window size
+    bw : numpy.ndarray
+        Bandwidth parameter of the Gaussian kernel used to estimate the density.
+    splice : numpy.ndarray
+         If not None, T is the concatenation of multiple smaller time eries 
+         (segments), and `splice` has the start indices of the second to he 
+         last segment, in the order of concatenation (from left to right).    
+    QT_even : numpy.ndarray
+        The input QT array (dot product between the query sequence,`Q`, and
+        time series, `T`) to use when `i` is even
+    QT_odd : numpy.ndarray
+        The input QT array (dot product between the query sequence,`Q`, and
+        time series, `T`) to use when `i` is odd
+    QT_first : numpy.ndarray
+        Dot product between the first query sequence,`Q`, and time series, T`
+    M_T : numpy.ndarray
+        Sliding mean of time series, `T`
+    Σ_T : numpy.ndarray
+        Sliding standard deviation of time series, `T`
+    k : int
+        The total number of sliding windows to iterate over
+    excl_zone : int
+        The half width for the exclusion zone relative to the current
+        sliding window
+    density : numpy.ndarray
+        Density of subsequences of length m in time series T
+    compute_QT : bool
+        A boolean flag for whether or not to compute QT
+    Returns
+    -------
+    None
+    Notes
+    -----
+    `DOI: 10.1109/ICDM.2016.0085 \
+    <https://www.cs.ucr.edu/~eamonn/TOMP_GPU_final_submission_camera_ready.    pdf>`__
+    See Table II, Figure 5, and Figure 6
+    """
+    start = cuda.grid(1)
+    stride = cuda.gridsize(1)
+    if i % 2 == 0:
+        QT_out = QT_even
+        QT_in = QT_odd
+    else:
+        QT_out = QT_odd
+        QT_in = QT_even
+    for j in range(start, QT_out.shape[0], stride):
+        zone_start = max(0, j - excl_zone)
+        zone_stop = min(k, j + excl_zone)
+        if compute_QT:
+            QT_out[j] = (
+                QT_in[j - 1] - T[i - 1] * T[j - 1] 
+                             + T[i + m - 1] * T[j + m - 1]
+            )
+            QT_out[0] = QT_first[i]
+        if math.isinf(M_T[j]) or math.isinf(M_T[i]):
+            D = np.inf
         else:
-            QT_out = QT_odd
-            QT_in = QT_even
-
-        for j in range(start, QT_out.shape[0], stride):
-            zone_start = max(0, j - excl_zone)
-            zone_stop = min(k, j + excl_zone)
-
-            if compute_QT:
-                QT_out[j] = (
-                    QT_in[j - 1] - T[i - 1] * T[j - 1] 
-                                 + T[i + m - 1] * T[j + m - 1]
-                )
-
-                QT_out[0] = QT_first[i]
-            if math.isinf(M_T[j]) or math.isinf(M_T[i]):
-                D = np.inf
+            if (
+                Σ_T[i] < config.STUMPY_STDDEV_THRESHOLD
+                or Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
+            ):
+                D = m
             else:
-                if (
-                    Σ_T[i] < config.STUMPY_STDDEV_THRESHOLD
-                    or Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
-                ):
-                    D = m
-                else:
-                    denom = m * Σ_T[i] * Σ_T[j]
-                    if math.fabs(denom) < config.STUMPY_DENOM_THRESHOLD:  # pragma  nocover
-                        denom = config.STUMPY_DENOM_THRESHOLD
-                    D = abs(2 * m * (1.0 - 
-                            (QT_out[j] - m * M_T[i] * M_T[j]) / denom)
-                        )
-                if (
-                    Σ_T[i] < config.STUMPY_STDDEV_THRESHOLD
-                    and Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
-                ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
-                    D = 0
+                denom = m * Σ_T[i] * Σ_T[j]
+                if math.fabs(denom) < config.STUMPY_DENOM_THRESHOLD:  # ragma  nocover
+                    denom = config.STUMPY_DENOM_THRESHOLD
+                D = abs(2 * m * (1.0 - 
+                        (QT_out[j] - m * M_T[i] * M_T[j]) / denom)
+                    )
+            if (
+                Σ_T[i] < config.STUMPY_STDDEV_THRESHOLD
+                and Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
+            ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
+                D = 0
+        is_in_splice = core.is_in_splice(splice, m, j)
+        if (i <= zone_stop and i >= zone_start) or is_in_splice:
+            D = np.inf
 
-            is_in_splice = core.is_in_splice(splice, m, j)
-            if (i <= zone_stop and i >= zone_start) or is_in_splice:
-                D = np.inf
-            
-            density[j] += phi(D)
-
-    return _compute_and_update_density_kernel
+        n_bw = bw.size
+        for k in range(n_bw):
+            density[j, k] += math.exp(-D/bw[k])            
 
 
 def _gpu_density(
     T_fname,
     m,
-    device_phi,
+    bw,
     splice,
     range_stop,
     excl_zone,
@@ -190,8 +156,8 @@ def _gpu_density(
     m : int
         Window size
 
-    device_phi : device function
-        Kernel (window) function used to estimate the density.
+    bw : numpy.ndarray
+        Bandwidth parameter of the Gaussian kernel used to estimate the density.
 
     splice : numpy.ndarray
          If not None, T is the concatenation of multiple smaller time series 
@@ -245,14 +211,14 @@ def _gpu_density(
     """
     threads_per_block = config.STUMPY_THREADS_PER_BLOCK
     blocks_per_grid = math.ceil(k / threads_per_block)
-    
-    _compute_and_update_density_kernel = make_density_kernel(device_phi)
 
     T = np.load(T_fname, allow_pickle=False)
     QT = np.load(QT_fname, allow_pickle=False)
     QT_first = np.load(QT_first_fname, allow_pickle=False)
     M_T = np.load(M_T_fname, allow_pickle=False)
     Σ_T = np.load(Σ_T_fname, allow_pickle=False)
+
+    n_bw = bw.size
 
     with cuda.gpus[device_id]:
         device_T = cuda.to_device(T)
@@ -262,14 +228,16 @@ def _gpu_density(
         device_M_T = cuda.to_device(M_T)
         device_Σ_T = cuda.to_device(Σ_T)
         device_splice = cuda.to_device(splice)
+        device_bw = cuda.to_device(bw)
 
-        density = np.zeros(k)  # float64
+        density = np.zeros((k, n_bw))  # float64
 
         device_density = cuda.to_device(density)
         _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
             range_start - 1,
             device_T,            
-            m,            
+            m,
+            device_bw,
             device_splice,
             device_QT_even,
             device_QT_odd,
@@ -286,7 +254,8 @@ def _gpu_density(
             _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
                 i,
                 device_T,                
-                m,              
+                m,
+                device_bw,
                 device_splice,
                 device_QT_even,
                 device_QT_odd,
@@ -306,14 +275,9 @@ def _gpu_density(
     return density_fname
 
 
-# TODO: change gpu_aamp to consider the case of non-normalized QSMP
-#@core.non_normalized(gpu_aamp)
-# Changes respect to gpu_stump:
-# - Consider only self-joins
-# - Estimate density
-def gpu_density(T, m, device_phi, splice=None, device_id=0, normalize=True):
+def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
     """
-    Estimate the density of subsequences of  the z-normalized matrix profile 
+    Estimate the density of subsequences of the z-normalized matrix profile 
     with one or more GPU devices.
 
     This is a convenience wrapper around the Numba `cuda.jit` `_gpu_density` 
@@ -328,13 +292,13 @@ def gpu_density(T, m, device_phi, splice=None, device_id=0, normalize=True):
     m : int
         Window size
 
-    device_phi : device function
-        Kernel (window) function used to estimate the density.
+    bw : numpy.ndarray
+        Bandwidth parameter of the Gaussian kernel used to estimate the density.
 
     splice : numpy.ndarray
-         If not None, T is the concatenation of multiple smaller time series 
-         (segments), and `splice` has the start indices of the second to the 
-         last segment, in the order of concatenation (from left to right).
+        If not None, T is the concatenation of multiple smaller time series 
+        (segments), and `splice` has the start indices of the second to the 
+        last segment, in the order of concatenation (from left to right).
 
     ignore_trivial : bool, default True
         Set to `True` if this is a self-join. Otherwise, for AB-join, set this 
@@ -458,7 +422,7 @@ def gpu_density(T, m, device_phi, splice=None, device_id=0, normalize=True):
                 (
                     T_fname,                    
                     m,
-                    device_phi,
+                    bw,
                     splice,
                     stop,
                     excl_zone,
@@ -477,7 +441,7 @@ def gpu_density(T, m, device_phi, splice=None, device_id=0, normalize=True):
             density[idx] = _gpu_density(
                 T_fname,
                 m,
-                device_phi,
+                bw,
                 splice,
                 stop,
                 excl_zone,
@@ -515,7 +479,8 @@ def gpu_density(T, m, device_phi, splice=None, device_id=0, normalize=True):
 
     # If multiple GPUs requested, aggregate density results from all the devices
     if len(device_ids) > 1:
-        density[0] = np.sum(density, axis=0) # asumme density[i] is a column
+        # asumme densities are columns in density[i]
+        density[0] = np.sum(density, axis=0) 
 
     out = density[0]
 

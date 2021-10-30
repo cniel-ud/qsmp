@@ -1,0 +1,526 @@
+# STUMPY
+# Copyright 2019 TD Ameritrade. Released under the terms of the 3-Clause BSD license.
+# STUMPY is a trademark of TD Ameritrade IP Company, Inc. All rights reserved.
+import logging
+import math
+import multiprocessing as mp
+import os
+
+import numpy as np
+from numba import cuda
+
+
+import core, config
+
+
+logger = logging.getLogger(__name__)
+
+# TODO: Update the arguments. It seems that passing the kernel as a function 
+# might be complicated or create a big overhead. So, maybe define a set 
+# functions and a dictionary with their references?
+# See:
+# https://numba.pydata.org/numba-doc/dev/user/faq.html
+# https://numba.pydata.org/numba-doc/latest/reference/types.html#functions
+# https://numba.pydata.org/numba-doc/latest/user/jit.
+# html#signature-specifications
+# @cuda.jit(
+#     "(i8, f8[:], i8, u1[:], i8[:], f8[:], f8[:], f8[:],"
+#     "f8[:], f8[:], i8, i8, f8[:, :], b1)"
+# )
+def make_density_kernel(phi):
+    @cuda.jit(
+        "(i8, f8[:], i8, i8[:], f8[:], f8[:], f8[:],"
+        "f8[:], f8[:], i8, i8, f8[:], b1)")
+    def _compute_and_update_density_kernel(
+        i,
+        T,
+        m,   
+        splice,
+        QT_even,
+        QT_odd,
+        QT_first,
+        M_T,
+        Σ_T,
+        k,
+        excl_zone,
+        density,
+        compute_QT,
+        ):
+        """
+        A Numba CUDA kernel to update the density
+
+        Parameters
+        ----------
+        i : int
+            sliding window `i`
+
+        T : numpy.ndarray
+            The time series or sequence for which to compute the dot product
+
+        m : int
+            Window size
+
+        phi : function
+            Kernel (window) function used to estimate the density. It's a 
+            function of the squared distance between subsequences and it's expected 
+            to be a monotonically decreasing function.
+
+        splice : numpy.ndarray
+             If not None, T is the concatenation of multiple smaller time series 
+             (segments), and `splice` has the start indices of the second to the 
+             last segment, in the order of concatenation (from left to right).
+
+        QT_even : numpy.ndarray
+            The input QT array (dot product between the query sequence,`Q`, and
+            time series, `T`) to use when `i` is even
+
+        QT_odd : numpy.ndarray
+            The input QT array (dot product between the query sequence,`Q`, and
+            time series, `T`) to use when `i` is odd
+
+        QT_first : numpy.ndarray
+            Dot product between the first query sequence,`Q`, and time series, `T`
+
+        M_T : numpy.ndarray
+            Sliding mean of time series, `T`
+
+        Σ_T : numpy.ndarray
+            Sliding standard deviation of time series, `T`
+
+        k : int
+            The total number of sliding windows to iterate over
+
+        excl_zone : int
+            The half width for the exclusion zone relative to the current
+            sliding window
+
+        density : numpy.ndarray
+            Density of subsequences of length m in time series T
+
+        compute_QT : bool
+            A boolean flag for whether or not to compute QT
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        `DOI: 10.1109/ICDM.2016.0085 \
+        <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.    pdf>`__
+
+        See Table II, Figure 5, and Figure 6
+        """
+        start = cuda.grid(1)
+        stride = cuda.gridsize(1)
+
+        if i % 2 == 0:
+            QT_out = QT_even
+            QT_in = QT_odd
+        else:
+            QT_out = QT_odd
+            QT_in = QT_even
+
+        for j in range(start, QT_out.shape[0], stride):
+            zone_start = max(0, j - excl_zone)
+            zone_stop = min(k, j + excl_zone)
+
+            if compute_QT:
+                QT_out[j] = (
+                    QT_in[j - 1] - T[i - 1] * T[j - 1] 
+                                 + T[i + m - 1] * T[j + m - 1]
+                )
+
+                QT_out[0] = QT_first[i]
+            if math.isinf(M_T[j]) or math.isinf(M_T[i]):
+                D = np.inf
+            else:
+                if (
+                    Σ_T[i] < config.STUMPY_STDDEV_THRESHOLD
+                    or Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
+                ):
+                    D = m
+                else:
+                    denom = m * Σ_T[i] * Σ_T[j]
+                    if math.fabs(denom) < config.STUMPY_DENOM_THRESHOLD:  # pragma  nocover
+                        denom = config.STUMPY_DENOM_THRESHOLD
+                    D = abs(2 * m * (1.0 - 
+                            (QT_out[j] - m * M_T[i] * M_T[j]) / denom)
+                        )
+                if (
+                    Σ_T[i] < config.STUMPY_STDDEV_THRESHOLD
+                    and Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
+                ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
+                    D = 0
+
+            is_in_splice = core.is_in_splice(splice, m, j)
+            if (i <= zone_stop and i >= zone_start) or is_in_splice:
+                D = np.inf
+            
+            density[j] += phi(D)
+
+    return _compute_and_update_density_kernel
+
+
+def _gpu_density(
+    T_fname,
+    m,
+    device_phi,
+    splice,
+    range_stop,
+    excl_zone,
+    M_T_fname,
+    Σ_T_fname,
+    QT_fname,
+    QT_first_fname,
+    k,
+    range_start=1,
+    device_id=0,
+):
+    """
+    A Numba CUDA version of STOMP for parallel computation of the
+    density of subsequences of the time series T.
+
+    Parameters
+    ----------
+    T_fname : str
+        The file name for the time series or sequence for which to compute
+        the density
+
+    m : int
+        Window size
+
+    device_phi : device function
+        Kernel (window) function used to estimate the density.
+
+    splice : numpy.ndarray
+         If not None, T is the concatenation of multiple smaller time series 
+         (segments), and `splice` has the start indices of the second to the 
+         last segment, in the order of concatenation (from left to right).    
+
+    range_stop : int
+        The index value along T_B for which to stop the matrix profile
+        calculation. This parameter is here for consistency with the
+        distributed `stumped` algorithm.
+
+    excl_zone : int
+        The half width for the exclusion zone relative to the current
+        sliding window
+
+    M_T_fname : str
+        The file name for the sliding mean of time series, `T`
+
+    Σ_T_fname : str
+        The file name for the sliding standard deviation of time series, `T`
+
+    QT_fname : str
+        The file name for the dot product between some query sequence,`Q`,
+        and time series, `T`
+
+    QT_first_fname : str
+        The file name for the QT for the first window relative to the current
+        sliding window
+
+    k : int
+        The total number of sliding windows to iterate over
+
+    range_start : int
+        The starting index value along T for which to start the density 
+        calculation. Default is 1.
+
+    device_id : int
+        The (GPU) device number to use. The default value is `0`.
+
+    Returns
+    -------
+    density_fname : str
+        The file name for the density
+
+    Notes
+    -----
+    `DOI: 10.1109/ICDM.2016.0085 \
+    <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.pdf>`__
+
+    See Table II, Figure 5, and Figure 6
+    """
+    threads_per_block = config.STUMPY_THREADS_PER_BLOCK
+    blocks_per_grid = math.ceil(k / threads_per_block)
+    
+    _compute_and_update_density_kernel = make_density_kernel(device_phi)
+
+    T = np.load(T_fname, allow_pickle=False)
+    QT = np.load(QT_fname, allow_pickle=False)
+    QT_first = np.load(QT_first_fname, allow_pickle=False)
+    M_T = np.load(M_T_fname, allow_pickle=False)
+    Σ_T = np.load(Σ_T_fname, allow_pickle=False)
+
+    with cuda.gpus[device_id]:
+        device_T = cuda.to_device(T)
+        device_QT_odd = cuda.to_device(QT)
+        device_QT_even = cuda.to_device(QT)
+        device_QT_first = cuda.to_device(QT_first)
+        device_M_T = cuda.to_device(M_T)
+        device_Σ_T = cuda.to_device(Σ_T)
+        device_splice = cuda.to_device(splice)
+
+        density = np.zeros(k)  # float64
+
+        device_density = cuda.to_device(density)
+        _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
+            range_start - 1,
+            device_T,            
+            m,            
+            device_splice,
+            device_QT_even,
+            device_QT_odd,
+            device_QT_first,
+            device_M_T,
+            device_Σ_T,
+            k,
+            excl_zone,
+            device_density,
+            False,
+        )
+
+        for i in range(range_start, range_stop):
+            _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
+                i,
+                device_T,                
+                m,              
+                device_splice,
+                device_QT_even,
+                device_QT_odd,
+                device_QT_first,
+                device_M_T,
+                device_Σ_T,
+                k,
+                excl_zone,
+                device_density,
+                True,
+            )
+
+        density = device_density.copy_to_host()
+
+        density_fname = core.array_to_temp_file(density)
+
+    return density_fname
+
+
+# TODO: change gpu_aamp to consider the case of non-normalized QSMP
+#@core.non_normalized(gpu_aamp)
+# Changes respect to gpu_stump:
+# - Consider only self-joins
+# - Estimate density
+def gpu_density(T, m, device_phi, splice=None, device_id=0, normalize=True):
+    """
+    Estimate the density of subsequences of  the z-normalized matrix profile 
+    with one or more GPU devices.
+
+    This is a convenience wrapper around the Numba `cuda.jit` `_gpu_density` 
+    function which computes the distance profile and density at each 
+    subsequence according to GPU-STOMP.
+
+    Parameters
+    ----------
+    T : numpy.ndarray
+        The time series or sequence for which to compute the matrix profile
+
+    m : int
+        Window size
+
+    device_phi : device function
+        Kernel (window) function used to estimate the density.
+
+    splice : numpy.ndarray
+         If not None, T is the concatenation of multiple smaller time series 
+         (segments), and `splice` has the start indices of the second to the 
+         last segment, in the order of concatenation (from left to right).
+
+    ignore_trivial : bool, default True
+        Set to `True` if this is a self-join. Otherwise, for AB-join, set this 
+        to `False`. Default is `True`.
+
+    device_id : int or list, default 0
+        The (GPU) device number to use. The default value is `0`. A list of
+        valid device ids (int) may also be provided for parallel GPU-STUMP
+        computation. A list of all valid device ids can be obtained by
+        executing `[device.id for device in numba.cuda.list_devices()]`.
+
+    normalize : bool, default True
+        When set to `True`, this z-normalizes subsequences prior to computing 
+        distances. Otherwise, this function gets re-routed to its complementary 
+        non-normalized equivalent set in the `@core.non_normalized` function 
+        decorator. TODO: Implement case when normalize=False.
+
+    Returns
+    -------
+    out : numpy.ndarray
+        The density.
+
+    
+    Notes
+    -----
+    `DOI: 10.1109/ICDM.2016.0085 \
+    <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.pdf>`__
+
+    See Table II, Figure 5, and Figure 6
+
+    Return: For every subsequence of lenght m at index i in T, you will get the 
+    density of subsequences evaluated at i.
+
+    
+    Unlike STAMP where the exclusion zone is m/2, the default exclusion zone for STOMP is m/4 (See Definition 3 and Figure 3).
+
+    TODO: Examples
+    --------
+    >>> from numba import cuda
+    >>> if __name__ == "__main__":
+    ...     all_gpu_devices = [device.id for device in cuda.list_devices()]
+    ...     stumpy.gpu_stump(
+    ...         np.array([584., -11., 23., 79., 1001., 0., -19.]),
+    ...         m=3,
+    ...         device_id=all_gpu_devices)
+    array([[0.11633857113691416, 4, -1, 4],
+           [2.694073918063438, 3, -1, 3],
+           [3.0000926340485923, 0, 0, 4],
+           [2.694073918063438, 1, 1, -1],
+           [0.11633857113691416, 0, 0, -1]], dtype=object)
+    """
+    
+    # Create a 0-dimensional array if splice is None. This is needed to avoid 
+    # the error: "CudaAPIError: [1] Call to cuLaunchKernel results in 
+    # CUDA_ERROR_INVALID_VALUE".
+    if splice is None:
+        splice = np.full(0,0)
+
+    T, M_T, Σ_T = core.preprocess(T, m)
+    
+    if T.ndim != 1:  # pragma: no cover
+        raise ValueError(
+            f"T is {T.ndim}-dimensional and must be 1-dimensional. "            
+        )
+
+    core.check_window_size(m, max_size=T.shape[0])
+
+    k = T.shape[0] - m + 1    
+    excl_zone = int(
+        np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM)
+    )  # See Definition 3 and Figure 3
+
+    T_fname = core.array_to_temp_file(T)
+    M_T_fname = core.array_to_temp_file(M_T)
+    Σ_T_fname = core.array_to_temp_file(Σ_T)
+    
+    out = np.empty((k, 1), dtype=object)
+
+    if isinstance(device_id, int):
+        device_ids = [device_id]
+    else:
+        device_ids = device_id
+
+    density = [None] * len(device_ids)    
+
+    for _id in device_ids:
+        with cuda.gpus[_id]:
+            if (
+                cuda.current_context().__class__.__name__ != "FakeCUDAContext"
+            ):  # pragma: no cover
+                cuda.current_context().deallocations.clear()
+
+    step = 1 + k // len(device_ids)
+
+    # Start process pool for multi-GPU request
+    if len(device_ids) > 1:  # pragma: no cover
+        mp.set_start_method("spawn", force=True)
+        p = mp.Pool(processes=len(device_ids))
+        results = [None] * len(device_ids)
+
+    QT_fnames = []
+    QT_first_fnames = []
+
+    # Asynchronously call _gpu_density() to compute the density over a range of 
+    # values for i (the index of the query). Each range is processed by a 
+    # different GPU.
+    for idx, start in enumerate(range(0, k, step)):
+        stop = min(k, start + step)
+
+        # TODO: change _get_QT to work only with self-join...worth it?
+        QT, QT_first = core._get_QT(start, T, T, m)
+        QT_fname = core.array_to_temp_file(QT)
+        QT_first_fname = core.array_to_temp_file(QT_first)
+        QT_fnames.append(QT_fname)
+        QT_first_fnames.append(QT_first_fname)
+
+        if len(device_ids) > 1 and idx < len(device_ids) - 1:  # pragma: no cover
+            # Spawn and execute in child process for multi-GPU request
+            results[idx] = p.apply_async(
+                _gpu_density,
+                (
+                    T_fname,                    
+                    m,
+                    device_phi,
+                    splice,
+                    stop,
+                    excl_zone,
+                    M_T_fname,
+                    Σ_T_fname,
+                    QT_fname,
+                    QT_first_fname,                    
+                    k,                    
+                    start + 1,
+                    device_ids[idx],
+                ),
+            )
+        else:
+            # Execute last chunk in parent process
+            # Only parent process is executed when a single GPU is requested
+            density[idx] = _gpu_density(
+                T_fname,
+                m,
+                device_phi,
+                splice,
+                stop,
+                excl_zone,
+                M_T_fname,
+                Σ_T_fname,
+                QT_fname,
+                QT_first_fname,                
+                k,                
+                start + 1,
+                device_ids[idx],
+            )
+
+    # Clean up process pool for multi-GPU request
+    if len(device_ids) > 1:  # pragma: no cover
+        p.close()
+        p.join()
+
+        # Collect results from spawned child processes if they exist
+        for idx, result in enumerate(results):
+            if result is not None:
+                density[idx] = result.get()
+
+    os.remove(T_fname)
+    os.remove(M_T_fname)
+    os.remove(Σ_T_fname)    
+    for QT_fname in QT_fnames:
+        os.remove(QT_fname)
+    for QT_first_fname in QT_first_fnames:
+        os.remove(QT_first_fname)
+
+    for idx in range(len(device_ids)):
+        density_fname = density[idx]        
+        density[idx] = np.load(density_fname, allow_pickle=False)        
+        os.remove(density_fname)        
+
+    # If multiple GPUs requested, aggregate density results from all the devices
+    if len(device_ids) > 1:
+        density[0] = np.sum(density, axis=0) # asumme density[i] is a column
+
+    out = density[0]
+
+    threshold = 10e-6
+    if core.are_distances_too_small(out, threshold=threshold):  # pragma: no cover
+        logger.warning(f"A large number of values are smaller than {threshold}.")
+        
+    return out

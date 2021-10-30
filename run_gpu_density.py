@@ -48,20 +48,20 @@ T, splice = utils.cat_segments(dpath, W, train_len=train_len)
 
 device_ids = [device.id for device in numba.cuda.list_devices()]
 
+# The Gaussian kernel is of the form
+#   f(x) = exp(-x^2/bw)
+#   with `bw` being the bandwidth parameter
+SNR = np.linspace(10, 0, num=10)  # in dB
+var_noise = 10 ** (-SNR/10) # signal has unit variance (z-normalization)
+# At max noise level (3*sqrt(var_noise)), the contribution to the density of a 
+# given pair is th% (fraction of max. value of density (1)).
+th = 0.1
+bw = (9 * var_noise) / np.log(1/th)
 
-GAMMA = 1
-def make_gauss(gamma=1):
-    @numba.cuda.jit("f8(f8)", device=True)
-    def gauss(x):
-        # Assumes x is distance squared
-        return math.exp(-x/gamma)
-    return gauss
-
-gauss = make_gauss(gamma=GAMMA)
-density = gpu_density(T, sublen, gauss, splice=splice,
+density = gpu_density(T, sublen, bw, splice=splice,
             device_id=device_ids, normalize=True)
 
-profile, indices = gpu_qsmp(T, sublen, density, 
+profile, indices = gpu_qsmp(T, sublen, density,
                     splice=splice, device_id=device_ids)
 
 

@@ -124,8 +124,8 @@ def _compute_and_update_density_kernel(
             D = np.inf
 
         n_bw = bw.size
-        for k in range(n_bw):
-            density[j, k] += math.exp(-D/bw[k])            
+        for ic in range(n_bw):
+            density[j, ic] += math.exp(-D/bw[ic])
 
 
 def _gpu_density(

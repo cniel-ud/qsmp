@@ -9,15 +9,16 @@ import os
 import numpy as np
 from numba import cuda
 
-from . import core, config
+import core, config
 
 logger = logging.getLogger(__name__)
 
 
-@cuda.jit(
-    "(i8, f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
-    "i8, i8, f8[:, :], i8[:, :], b1)"
-)
+#(
+#    "(i8, f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
+#    "i8, i8, f8[:, :], i8[:, :], b1)"
+#)
+@cuda.jit
 def _compute_and_update_QI_kernel(
     i,
     T,    
@@ -29,7 +30,7 @@ def _compute_and_update_QI_kernel(
     QT_first,
     M_T,
     Σ_T,    
-    k,    
+    k,
     excl_zone,
     profile,
     indices,
@@ -144,15 +145,20 @@ def _compute_and_update_QI_kernel(
 
         # Ignore neighbors that are either in the exclusion zone, don't 
         # increase the density, or  have the splice.
-        is_in_splice = core.is_in_splice(splice, m, j)
-        if  (i <= zone_stop and i >= zone_start)\
-            or (density[i] <= density[j])\
-            or is_in_splice:
-            D = np.inf
-        if D < profile[j]:
-            profile[j] = D
-            indices[j] = i
+        n_density = density.shape[1]
 
+        is_in_splice = core.is_in_splice(splice, m, j)
+        for ic in range(n_density):
+            if is_in_splice:
+                profile[j, ic] = np.nan
+                indices[j, ic] = np.nan
+            else:
+                if  (i <= zone_stop and i >= zone_start)\
+                    or (density[i, ic] <= density[j, ic]):
+                    D = np.inf
+                if D < profile[j, ic]:
+                    profile[j, ic] = D
+                    indices[j, ic] = i
 
 def _gpu_qsmp(
     T,    
@@ -238,7 +244,9 @@ def _gpu_qsmp(
     QT = np.load(QT_fname, allow_pickle=False)
     QT_first = np.load(QT_first_fname, allow_pickle=False)
     M_T = np.load(M_T_fname, allow_pickle=False)
-    Σ_T = np.load(Σ_T_fname, allow_pickle=False)    
+    Σ_T = np.load(Σ_T_fname, allow_pickle=False)
+
+    n_density = density.shape[1]
 
     with cuda.gpus[device_id]:
         device_T = cuda.to_device(T)
@@ -250,8 +258,8 @@ def _gpu_qsmp(
         device_density = cuda.to_device(density)
         device_splice = cuda.to_device(splice)
 
-        profile = np.full(k, np.inf)  # float64
-        indices = np.full(k, -1, dtype=np.int64)  # int64
+        profile = np.full((k, n_density), np.inf)  # float64
+        indices = np.full((k, n_density), -1, dtype=np.int64)  # int64
 
         device_profile = cuda.to_device(profile)
         device_indices = cuda.to_device(indices)
@@ -466,15 +474,16 @@ def gpu_qsmp(T, m, density, splice=None, device_id=0):
         os.remove(profile_fname)
         os.remove(indices_fname)
 
+    n_density = density.shape[1]
     for i in range(1, len(device_ids)):
         # Update all matrix profiles and matrix profile indices
         # (global, left, right) and store in profile[0] and indices[0]
-        cond = profile[0] < profile[i]
-        profile[0] = np.where(cond, profile[0], profile[i])
-        indices[0] = np.where(cond, indices[0], indices[i])
-
-    # out[:, 0] = profile[0]
-    # out[:, 1] = indices[0]
+        for ic in range(n_density):
+            cond = profile[0][:, ic] < profile[i][:, ic]
+            profile[0][:, ic] =\
+                np.where(cond, profile[0][:, ic], profile[i][:, ic])
+            indices[0][:, ic] =\
+                np.where(cond, indices[0][:, ic], indices[i][:, ic])
 
     threshold = 10e-6
     if core.are_distances_too_small(profile[0], threshold=threshold):  # pragma: no cover

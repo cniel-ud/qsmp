@@ -45,7 +45,7 @@ def _h5py_unpack(obj, hdf5):
             cell = []
             for ref in obj:
                 entry = _h5py_unpack(ref, hdf5)
-                cell.append(entry)            
+                cell.append(entry)
             return cell
     elif isinstance(obj, h5py.h5r.Reference): # an object reference
         obj = hdf5[obj]
@@ -78,7 +78,6 @@ def apply2list(obj, fun):
     else:
         return [apply2list(x, fun) for x in obj]
 
-
 def make_get_id(p):
     def _get_id(file):
         m = p.search(file)
@@ -87,12 +86,11 @@ def make_get_id(p):
 
 def cat_segments(dpath, W, train_len=None):
 
-
     if train_len:
         print(f'Requested the first {train_len} time points')
 
     p = re.compile(FILE_ID_PAT)
-    
+
     globpath = os.path.join(dpath, RX_GLOB)
     files = glob.glob(globpath)
 
@@ -120,10 +118,24 @@ def cat_segments(dpath, W, train_len=None):
 
     print(f'Time series with {pnts} time points after '
           f'concatenating {i_file+1} segments')
-    
+
     ts = np.hstack(ts)
     seglen = np.array(seglen)
     cumlen = np.cumsum(seglen)
     splice = cumlen[:-1]  # start index for second to last segment
 
     return ts, splice
+
+def fix_root(qsmp):
+    profile, neighbor, density = qsmp
+    n_bw = profile.shape[1]
+    for i_bw in np.arange(n_bw):
+        is_mode = np.isinf(profile[:, i_bw])
+        iinf = np.asarray(is_mode).nonzero()[0]
+        # QSMP=inf -> hit a mode: its nearest neighbor is itself.
+        imax = np.argmax(density[:, i_bw])
+        assert imax in iinf
+        neighbor[iinf, i_bw] = iinf
+        profile[iinf, i_bw] = 0
+
+    return profile, neighbor, density

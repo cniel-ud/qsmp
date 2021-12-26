@@ -5,6 +5,7 @@ import logging
 import math
 import multiprocessing as mp
 import os
+from time import perf_counter
 
 import numpy as np
 from numba import cuda
@@ -25,7 +26,7 @@ def _compute_and_update_density_kernel(
     T,
     m,
     bw,
-    splice,    
+    splice,
     QT_even,
     QT_odd,
     QT_first,
@@ -49,9 +50,9 @@ def _compute_and_update_density_kernel(
     bw : numpy.ndarray
         Bandwidth parameter of the Gaussian kernel used to estimate the density.
     splice : numpy.ndarray
-         If not None, T is the concatenation of multiple smaller time eries 
-         (segments), and `splice` has the start indices of the second to he 
-         last segment, in the order of concatenation (from left to right).    
+         If not None, T is the concatenation of multiple smaller time eries
+         (segments), and `splice` has the start indices of the second to he
+         last segment, in the order of concatenation (from left to right).
     QT_even : numpy.ndarray
         The input QT array (dot product between the query sequence,`Q`, and
         time series, `T`) to use when `i` is even
@@ -95,7 +96,7 @@ def _compute_and_update_density_kernel(
         zone_stop = min(k, j + excl_zone)
         if compute_QT:
             QT_out[j] = (
-                QT_in[j - 1] - T[i - 1] * T[j - 1] 
+                QT_in[j - 1] - T[i - 1] * T[j - 1]
                              + T[i + m - 1] * T[j + m - 1]
             )
             QT_out[0] = QT_first[i]
@@ -109,15 +110,15 @@ def _compute_and_update_density_kernel(
                 D = m
             else:
                 denom = m * Σ_T[i] * Σ_T[j]
-                if math.fabs(denom) < config.STUMPY_DENOM_THRESHOLD:  # ragma  nocover
+                if math.fabs(denom) < config.STUMPY_DENOM_THRESHOLD:  # pragma nocover
                     denom = config.STUMPY_DENOM_THRESHOLD
-                D = abs(2 * m * (1.0 - 
+                D = abs(2 * m * (1.0 -
                         (QT_out[j] - m * M_T[i] * M_T[j]) / denom)
                     )
             if (
                 Σ_T[i] < config.STUMPY_STDDEV_THRESHOLD
-                and Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
-            ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
+		and Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
+	       ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
                 D = 0
         is_in_splice = core.is_in_splice(splice, m, j)
         if (i <= zone_stop and i >= zone_start) or is_in_splice:
@@ -126,6 +127,47 @@ def _compute_and_update_density_kernel(
         n_bw = bw.size
         for ic in range(n_bw):
             density[j, ic] += math.exp(-D/bw[ic])
+
+
+def chkpt_read(dpath, device_id, range_start, k, n_bw):
+    # Checkpoint file that saves last `i` processed before SIGTERM
+    fname = f'device{device_id}_checkpoint.npz'
+    fpath = os.path.join(dpath, fname)
+    if os.path.isfile(fpath):
+        old_start = range_start
+        with np.load(fpath) as data:
+            range_start = data['range_start']
+            density = data['density']
+        print(f'Checkpoint found for GPU #{device_id}\n'
+              f'Previous start: {old_start}\n'
+              f'New start: {range_start}', flush=True)
+    else:
+        density = np.zeros((k, n_bw))  # float64
+
+    return range_start, density
+
+
+def chkpt_write(dpath, device_id, i, device_density, range_start, t_elapsed_hr):
+    # Checkpoint file that saves last `i` processed before SIGTERM
+    fname = f'device{device_id}_checkpoint.npz'
+    fpath = os.path.join(dpath, fname)
+
+    density = device_density.copy_to_host()
+
+    with open(fpath, 'wb') as f:
+        np.savez(f, range_start=i, density=density)
+
+    print(f'GPU #{device_id}\n'
+          f'{t_elapsed_hr:.3g} hours elapsed. Checkpointing...\n'
+          f'i = {i}, range_start = {range_start}', flush=True)
+
+
+def chkpt_clean(dpath, device_id):
+    """ Remove checkpointing file """
+    fname = f'device{device_id}_checkpoint.npz'
+    fpath = os.path.join(dpath, fname)
+
+    os.remove(fpath)
 
 
 def _gpu_density(
@@ -140,6 +182,7 @@ def _gpu_density(
     QT_fname,
     QT_first_fname,
     k,
+    dpath,
     range_start=1,
     device_id=0,
 ):
@@ -160,9 +203,9 @@ def _gpu_density(
         Bandwidth parameter of the Gaussian kernel used to estimate the density.
 
     splice : numpy.ndarray
-         If not None, T is the concatenation of multiple smaller time series 
-         (segments), and `splice` has the start indices of the second to the 
-         last segment, in the order of concatenation (from left to right).    
+         If not None, T is the concatenation of multiple smaller time series
+         (segments), and `splice` has the start indices of the second to the
+         last segment, in the order of concatenation (from left to right).
 
     range_stop : int
         The index value along T_B for which to stop the matrix profile
@@ -190,8 +233,11 @@ def _gpu_density(
     k : int
         The total number of sliding windows to iterate over
 
+    dpath: string
+        Absolute path to folder where checkpointing files are to be saved
+
     range_start : int
-        The starting index value along T for which to start the density 
+        The starting index value along T for which to start the density
         calculation. Default is 1.
 
     device_id : int
@@ -230,12 +276,13 @@ def _gpu_density(
         device_splice = cuda.to_device(splice)
         device_bw = cuda.to_device(bw)
 
-        density = np.zeros((k, n_bw))  # float64
+        range_start, density = chkpt_read(
+            dpath, device_id, range_start, k, n_bw)
 
         device_density = cuda.to_device(density)
         _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
             range_start - 1,
-            device_T,            
+            device_T,
             m,
             device_bw,
             device_splice,
@@ -249,11 +296,15 @@ def _gpu_density(
             device_density,
             False,
         )
+        t_stop = perf_counter()
 
+        t_elapsed_hr = 0
+        tot_elapsed_hr = 0
         for i in range(range_start, range_stop):
+            t_start = perf_counter()
             _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
                 i,
-                device_T,                
+                device_T,
                 m,
                 device_bw,
                 device_splice,
@@ -267,7 +318,15 @@ def _gpu_density(
                 device_density,
                 True,
             )
+            t_stop = perf_counter()
+            t_elapsed_hr += (t_stop - t_start)/3600
+            if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
+                tot_elapsed_hr += t_elapsed_hr
+                t_elapsed_hr = 0
+                chkpt_write(dpath, device_id, i, device_density,
+                            range_start, tot_elapsed_hr)
 
+        chkpt_clean(dpath, device_id)
         density = device_density.copy_to_host()
 
         density_fname = core.array_to_temp_file(density)
@@ -275,13 +334,13 @@ def _gpu_density(
     return density_fname
 
 
-def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
+def gpu_density(T, m, bw, dpath, splice=None, device_id=0):
     """
-    Estimate the density of subsequences of the z-normalized matrix profile 
+    Estimate the density of subsequences of the z-normalized matrix profile
     with one or more GPU devices.
 
-    This is a convenience wrapper around the Numba `cuda.jit` `_gpu_density` 
-    function which computes the distance profile and density at each 
+    This is a convenience wrapper around the Numba `cuda.jit` `_gpu_density`
+    function which computes the distance profile and density at each
     subsequence according to GPU-STOMP.
 
     Parameters
@@ -296,12 +355,12 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
         Bandwidth parameter of the Gaussian kernel used to estimate the density.
 
     splice : numpy.ndarray
-        If not None, T is the concatenation of multiple smaller time series 
-        (segments), and `splice` has the start indices of the second to the 
+        If not None, T is the concatenation of multiple smaller time series
+        (segments), and `splice` has the start indices of the second to the
         last segment, in the order of concatenation (from left to right).
 
     ignore_trivial : bool, default True
-        Set to `True` if this is a self-join. Otherwise, for AB-join, set this 
+        Set to `True` if this is a self-join. Otherwise, for AB-join, set this
         to `False`. Default is `True`.
 
     device_id : int or list, default 0
@@ -311,9 +370,9 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
         executing `[device.id for device in numba.cuda.list_devices()]`.
 
     normalize : bool, default True
-        When set to `True`, this z-normalizes subsequences prior to computing 
-        distances. Otherwise, this function gets re-routed to its complementary 
-        non-normalized equivalent set in the `@core.non_normalized` function 
+        When set to `True`, this z-normalizes subsequences prior to computing
+        distances. Otherwise, this function gets re-routed to its complementary
+        non-normalized equivalent set in the `@core.non_normalized` function
         decorator. TODO: Implement case when normalize=False.
 
     Returns
@@ -321,7 +380,7 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
     out : numpy.ndarray
         The density.
 
-    
+
     Notes
     -----
     `DOI: 10.1109/ICDM.2016.0085 \
@@ -329,10 +388,10 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
 
     See Table II, Figure 5, and Figure 6
 
-    Return: For every subsequence of lenght m at index i in T, you will get the 
+    Return: For every subsequence of lenght m at index i in T, you will get the
     density of subsequences evaluated at i.
 
-    
+
     Unlike STAMP where the exclusion zone is m/2, the default exclusion zone for STOMP is m/4 (See Definition 3 and Figure 3).
 
     TODO: Examples
@@ -350,23 +409,23 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
            [2.694073918063438, 1, 1, -1],
            [0.11633857113691416, 0, 0, -1]], dtype=object)
     """
-    
-    # Create a 0-dimensional array if splice is None. This is needed to avoid 
-    # the error: "CudaAPIError: [1] Call to cuLaunchKernel results in 
+
+    # Create a 0-dimensional array if splice is None. This is needed to avoid
+    # the error: "CudaAPIError: [1] Call to cuLaunchKernel results in
     # CUDA_ERROR_INVALID_VALUE".
     if splice is None:
         splice = np.full(0,0)
 
     T, M_T, Σ_T = core.preprocess(T, m)
-    
+
     if T.ndim != 1:  # pragma: no cover
         raise ValueError(
-            f"T is {T.ndim}-dimensional and must be 1-dimensional. "            
+            f"T is {T.ndim}-dimensional and must be 1-dimensional. "
         )
 
     core.check_window_size(m, max_size=T.shape[0])
 
-    k = T.shape[0] - m + 1    
+    k = T.shape[0] - m + 1
     excl_zone = int(
         np.ceil(m / config.STUMPY_EXCL_ZONE_DENOM)
     )  # See Definition 3 and Figure 3
@@ -374,15 +433,13 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
     T_fname = core.array_to_temp_file(T)
     M_T_fname = core.array_to_temp_file(M_T)
     Σ_T_fname = core.array_to_temp_file(Σ_T)
-    
-    out = np.empty((k, 1), dtype=object)
 
     if isinstance(device_id, int):
         device_ids = [device_id]
     else:
         device_ids = device_id
 
-    density = [None] * len(device_ids)    
+    density = [None] * len(device_ids)
 
     for _id in device_ids:
         with cuda.gpus[_id]:
@@ -402,8 +459,8 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
     QT_fnames = []
     QT_first_fnames = []
 
-    # Asynchronously call _gpu_density() to compute the density over a range of 
-    # values for i (the index of the query). Each range is processed by a 
+    # Asynchronously call _gpu_density() to compute the density over a range of
+    # values for i (the index of the query). Each range is processed by a
     # different GPU.
     for idx, start in enumerate(range(0, k, step)):
         stop = min(k, start + step)
@@ -420,7 +477,7 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
             results[idx] = p.apply_async(
                 _gpu_density,
                 (
-                    T_fname,                    
+                    T_fname,
                     m,
                     bw,
                     splice,
@@ -429,8 +486,9 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
                     M_T_fname,
                     Σ_T_fname,
                     QT_fname,
-                    QT_first_fname,                    
-                    k,                    
+                    QT_first_fname,
+                    k,
+                    dpath,
                     start + 1,
                     device_ids[idx],
                 ),
@@ -448,8 +506,9 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
                 M_T_fname,
                 Σ_T_fname,
                 QT_fname,
-                QT_first_fname,                
-                k,                
+                QT_first_fname,
+                k,
+                dpath,
                 start + 1,
                 device_ids[idx],
             )
@@ -466,26 +525,24 @@ def gpu_density(T, m, bw, splice=None, device_id=0, normalize=True):
 
     os.remove(T_fname)
     os.remove(M_T_fname)
-    os.remove(Σ_T_fname)    
+    os.remove(Σ_T_fname)
     for QT_fname in QT_fnames:
         os.remove(QT_fname)
     for QT_first_fname in QT_first_fnames:
         os.remove(QT_first_fname)
 
     for idx in range(len(device_ids)):
-        density_fname = density[idx]        
-        density[idx] = np.load(density_fname, allow_pickle=False)        
-        os.remove(density_fname)        
+        density_fname = density[idx]
+        density[idx] = np.load(density_fname, allow_pickle=False)
+        os.remove(density_fname)
 
     # If multiple GPUs requested, aggregate density results from all the devices
     if len(device_ids) > 1:
         # asumme densities are columns in density[i]
-        density[0] = np.sum(density, axis=0) 
-
-    out = density[0]
+        density[0] = np.sum(density, axis=0)
 
     threshold = 10e-6
-    if core.are_distances_too_small(out, threshold=threshold):  # pragma: no cover
+    if core.are_distances_too_small(density[0], threshold=threshold):  # pragma: no cover
         logger.warning(f"A large number of values are smaller than {threshold}.")
-        
-    return out
+
+    return density[0]

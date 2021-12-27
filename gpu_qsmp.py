@@ -138,8 +138,8 @@ def _compute_and_update_QI_kernel(
             ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
                 D = 0
 
-        # Ignore neighbors that are trivial (on excl. zone) or if at splice
-        if (i <= zone_stop and i >= zone_start) or math.isnan(profile[j, 0]):
+        # Ignore sequences that are at splice
+        if math.isnan(profile[j, 0]):
             D = np.inf
 
         n_density = density.shape[1]

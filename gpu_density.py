@@ -171,7 +171,7 @@ def chkpt_clean(dpath, device_id):
     fname = f'device{device_id}_checkpoint.npz'
     fpath = os.path.join(dpath, fname)
     if os.path.isfile(fpath):
-    os.remove(fpath)
+        os.remove(fpath)
 
 def _gpu_density(
     T_fname,

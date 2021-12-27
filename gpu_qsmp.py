@@ -194,8 +194,8 @@ def chkpt_clean(dpath, device_id):
     """ Remove checkpointing file """
     fname = f'device{device_id}_checkpoint.npz'
     fpath = os.path.join(dpath, fname)
-
-    os.remove(fpath)
+    if os.path.isfile(fpath):
+        os.remove(fpath)
 
 
 def _gpu_qsmp(

@@ -22,10 +22,6 @@ import core, config
 
 logger = logging.getLogger(__name__)
 
-
-#(
-    #"(i8, f8[:], i8, i8[:], f8[:], f8[:], f8[:], f8[:],"
-#    "f8[:], f8[:], i8, i8, f8[:], b1)")
 @cuda.jit
 def _compute_and_update_density_kernel(
     i,
@@ -56,8 +52,8 @@ def _compute_and_update_density_kernel(
     bw : numpy.ndarray
         Bandwidth parameter of the Gaussian kernel used to estimate the density.
     splice : numpy.ndarray
-         If not None, T is the concatenation of multiple smaller time eries
-         (segments), and `splice` has the start indices of the second to he
+         If not None, T is the concatenation of multiple smaller time series
+         (segments), and `splice` has the start indices of the second to the
          last segment, in the order of concatenation (from left to right).
     QT_even : numpy.ndarray
         The input QT array (dot product between the query sequence,`Q`, and
@@ -80,14 +76,10 @@ def _compute_and_update_density_kernel(
         Density of subsequences of length m in time series T
     compute_QT : bool
         A boolean flag for whether or not to compute QT
+
     Returns
     -------
     None
-    Notes
-    -----
-    `DOI: 10.1109/ICDM.2016.0085 \
-    <https://www.cs.ucr.edu/~eamonn/TOMP_GPU_final_submission_camera_ready.    pdf>`__
-    See Table II, Figure 5, and Figure 6
     """
     start = cuda.grid(1)
     stride = cuda.gridsize(1)
@@ -126,6 +118,8 @@ def _compute_and_update_density_kernel(
 		and Σ_T[j] < config.STUMPY_STDDEV_THRESHOLD
 	       ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
                 D = 0
+
+        # Ignore subsequences in the exclusion zone or that are at one splice
         is_in_splice = core.is_in_splice(splice, m, j)
         if (i <= zone_stop and i >= zone_start) or is_in_splice:
             D = np.inf
@@ -135,8 +129,27 @@ def _compute_and_update_density_kernel(
             density[j, ic] += math.exp(-D/bw[ic])
 
 
-def chkpt_read(dpath, device_id, range_start, k, n_bw):
+def chkpt_write(dpath, device_id, i, device_density, range_start, t_elapsed_hr):
+    """ Save density to checkpointing file
+
+    The density is saved periodically (see QSMP_CHECKPOINT_PERIOD in config.py) in case the job gets killed (SIGTERM or preemption in SLURM).
+    """
     # Checkpoint file that saves last `i` processed before SIGTERM
+    fname = f'device{device_id}_checkpoint.npz'
+    fpath = os.path.join(dpath, fname)
+
+    density = device_density.copy_to_host()
+
+    with open(fpath, 'wb') as f:
+        np.savez(f, range_start=i, density=density)
+
+    print(f'GPU #{device_id}\n'
+          f'{t_elapsed_hr:.3g} hours elapsed. Checkpointing...\n'
+          f'i = {i}, range_start = {range_start}', flush=True)
+
+def chkpt_read(dpath, device_id, range_start, k, n_bw):
+    """ Read density from checkpointing file """
+
     fname = f'device{device_id}_checkpoint.npz'
     fpath = os.path.join(dpath, fname)
     if os.path.isfile(fpath):
@@ -153,28 +166,12 @@ def chkpt_read(dpath, device_id, range_start, k, n_bw):
     return range_start, density
 
 
-def chkpt_write(dpath, device_id, i, device_density, range_start, t_elapsed_hr):
-    # Checkpoint file that saves last `i` processed before SIGTERM
-    fname = f'device{device_id}_checkpoint.npz'
-    fpath = os.path.join(dpath, fname)
-
-    density = device_density.copy_to_host()
-
-    with open(fpath, 'wb') as f:
-        np.savez(f, range_start=i, density=density)
-
-    print(f'GPU #{device_id}\n'
-          f'{t_elapsed_hr:.3g} hours elapsed. Checkpointing...\n'
-          f'i = {i}, range_start = {range_start}', flush=True)
-
-
 def chkpt_clean(dpath, device_id):
     """ Remove checkpointing file """
     fname = f'device{device_id}_checkpoint.npz'
     fpath = os.path.join(dpath, fname)
 
     os.remove(fpath)
-
 
 def _gpu_density(
     T_fname,
@@ -253,13 +250,6 @@ def _gpu_density(
     -------
     density_fname : str
         The file name for the density
-
-    Notes
-    -----
-    `DOI: 10.1109/ICDM.2016.0085 \
-    <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.pdf>`__
-
-    See Table II, Figure 5, and Figure 6
     """
     threads_per_block = config.STUMPY_THREADS_PER_BLOCK
     blocks_per_grid = math.ceil(k / threads_per_block)
@@ -346,8 +336,8 @@ def gpu_density(T, m, bw, dpath, splice=None, device_id=0):
     with one or more GPU devices.
 
     This is a convenience wrapper around the Numba `cuda.jit` `_gpu_density`
-    function which computes the distance profile and density at each
-    subsequence according to GPU-STOMP.
+    function which computes the density at each subsequence according to
+    GPU-STOMP.
 
     Parameters
     ----------
@@ -383,37 +373,8 @@ def gpu_density(T, m, bw, dpath, splice=None, device_id=0):
 
     Returns
     -------
-    out : numpy.ndarray
+    density : numpy.ndarray
         The density.
-
-
-    Notes
-    -----
-    `DOI: 10.1109/ICDM.2016.0085 \
-    <https://www.cs.ucr.edu/~eamonn/STOMP_GPU_final_submission_camera_ready.pdf>`__
-
-    See Table II, Figure 5, and Figure 6
-
-    Return: For every subsequence of lenght m at index i in T, you will get the
-    density of subsequences evaluated at i.
-
-
-    Unlike STAMP where the exclusion zone is m/2, the default exclusion zone for STOMP is m/4 (See Definition 3 and Figure 3).
-
-    TODO: Examples
-    --------
-    >>> from numba import cuda
-    >>> if __name__ == "__main__":
-    ...     all_gpu_devices = [device.id for device in cuda.list_devices()]
-    ...     stumpy.gpu_stump(
-    ...         np.array([584., -11., 23., 79., 1001., 0., -19.]),
-    ...         m=3,
-    ...         device_id=all_gpu_devices)
-    array([[0.11633857113691416, 4, -1, 4],
-           [2.694073918063438, 3, -1, 3],
-           [3.0000926340485923, 0, 0, 4],
-           [2.694073918063438, 1, 1, -1],
-           [0.11633857113691416, 0, 0, -1]], dtype=object)
     """
 
     # Create a 0-dimensional array if splice is None. This is needed to avoid

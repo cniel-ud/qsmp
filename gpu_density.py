@@ -1,6 +1,12 @@
-# STUMPY
-# Copyright 2019 TD Ameritrade. Released under the terms of the 3-Clause BSD license.
-# STUMPY is a trademark of TD Ameritrade IP Company, Inc. All rights reserved.
+# STUMPY Copyright 2019 TD Ameritrade. Released under the terms of the 3-Clause
+# BSD license. STUMPY is a trademark of TD Ameritrade IP Company, Inc. All
+# rights reserved.
+# QSMPY Copyright (c) 2021, Carlos H. Mendoza-Cardenas. Released under the
+# terms of the 3-Clause BSD license.
+
+# This module adapts and expands the module gpu_stump in
+# https://github.com/TDAmeritrade/stumpy
+
 import logging
 import math
 import multiprocessing as mp

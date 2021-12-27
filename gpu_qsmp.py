@@ -1,6 +1,12 @@
-# STUMPY
-# Copyright 2019 TD Ameritrade. Released under the terms of the 3-Clause BSD license.
-# STUMPY is a trademark of TD Ameritrade IP Company, Inc. All rights reserved.
+# STUMPY Copyright 2019 TD Ameritrade. Released under the terms of the 3-Clause
+# BSD license. STUMPY is a trademark of TD Ameritrade IP Company, Inc. All
+# rights reserved.
+# QSMPY Copyright (c) 2021, Carlos H. Mendoza-Cardenas. Released under the
+# terms of the 3-Clause BSD license.
+
+# This module adapts and expands the module gpu_stump in
+# https://github.com/TDAmeritrade/stumpy
+
 import logging
 import math
 import multiprocessing as mp
@@ -14,11 +20,6 @@ from time import perf_counter
 
 logger = logging.getLogger(__name__)
 
-
-#(
-#    "(i8, f8[:], i8, f8[:], f8[:], f8[:], f8[:], f8[:], f8[:],"
-#    "i8, i8, f8[:, :], i8[:, :], b1)"
-#)
 @cuda.jit
 def _compute_and_update_QI_kernel(
     i,
@@ -151,8 +152,27 @@ def _compute_and_update_QI_kernel(
                     indices[j, ic] = i
 
 
+def chkpt_write(dpath, device_id, i, device_profile, device_indices,
+                range_start, t_elapsed_hr):
+    """ Save distance and index profile to checkpointing file
+
+    The density is saved periodically (see QSMP_CHECKPOINT_PERIOD in config.py) in case the job gets killed (SIGTERM or preemption in SLURM).
+    """
+    fname = f'device{device_id}_checkpoint.npz'
+    fpath = os.path.join(dpath, fname)
+
+    profile = device_profile.copy_to_host()
+    indices = device_indices.copy_to_host()
+
+    with open(fpath, 'wb') as f:
+        np.savez(f, range_start=i, profile=profile, indices=indices)
+
+    print(f'GPU #{device_id}\n'
+          f'{t_elapsed_hr:.3g} hours elapsed. Checkpointing...\n'
+          f'i = {i}, range_start = {range_start}', flush=True)
+
 def chkpt_read(dpath, device_id, range_start, k, n_bw):
-    # Checkpoint file that saves last `i` processed before SIGTERM
+    """ Read distance and index profile from checkpointing file """
     fname = f'device{device_id}_checkpoint.npz'
     fpath = os.path.join(dpath, fname)
     if os.path.isfile(fpath):
@@ -169,24 +189,6 @@ def chkpt_read(dpath, device_id, range_start, k, n_bw):
         indices = np.full((k, n_bw), -1, dtype=np.int64)  # int64
 
     return range_start, profile, indices
-
-
-def chkpt_write(dpath, device_id, i, device_profile, device_indices, \
-    range_start, t_elapsed_hr):
-    # Checkpoint file that saves last `i` processed before SIGTERM
-    fname = f'device{device_id}_checkpoint.npz'
-    fpath = os.path.join(dpath, fname)
-
-    profile = device_profile.copy_to_host()
-    indices = device_indices.copy_to_host()
-
-    with open(fpath, 'wb') as f:
-        np.savez(f, range_start=i, profile=profile, indices=indices)
-
-    print(f'GPU #{device_id}\n'
-          f'{t_elapsed_hr:.3g} hours elapsed. Checkpointing...\n'
-          f'i = {i}, range_start = {range_start}', flush=True)
-
 
 def chkpt_clean(dpath, device_id):
     """ Remove checkpointing file """
@@ -394,9 +396,10 @@ def gpu_qsmp(T, m, density, dpath, splice=None, device_id=0):
 
     Returns
     -------
-    out : ndarray
-        The first column consists of the QSMP, the second column
-        consists of the QSMP indices.
+    profile : ndarray
+        The nearest-neighbor distances
+    indices : ndarray
+        The nearest-neighbor indices
     """
 
     # Create a 0-dimensional array if splice is None. This is needed to avoid

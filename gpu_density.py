@@ -508,6 +508,8 @@ def gpu_density(T, m, bw, dpath, splice=None, device_id=0):
         # asumme densities are columns in density[i]
         density[0] = np.sum(density, axis=0)
 
+    density[0][density[0] < config.QSMP_DENSITY_THRESHOLD] = 0
+
     threshold = 10e-6
     if core.are_distances_too_small(density[0], threshold=threshold):  # pragma: no cover
         logger.warning(f"A large number of values are smaller than {threshold}.")

@@ -1,4 +1,3 @@
-from os import close
 import numpy as np
 
 class Mode:
@@ -120,5 +119,36 @@ def find_modes(qsmp, maxdist, distfunc='add'):
             modes = update_modes(modes, current_child, update_ancestor=False)
 
         max_modes = len(modes)
+
+    return modes
+
+
+def find_modes_no_exclusion_zone(qsmp, maxdist):
+    """ Find distant modes
+
+    Nearest-neighbor (NN) distance and index are computed without using a
+    exclusion zone. This makes the tree highly fragmented and more expensive to
+    traverse using the method in find_modes().
+
+    Here we order the density, NN-distance (`profile`), and NN-index
+    (`neighbor`) in descending order of the density. Then, we pick as modes the
+    points where the profile is bigger than the distance threshold (`maxdist`).
+    """
+
+    profile = qsmp[0]
+    neighbor = qsmp[1].astype(np.int64)
+    density = qsmp[2]
+
+    isort = np.argsort(-density)
+    profile = profile[isort]
+    neighbor = profile[isort]
+    density = density[isort]
+
+    is_distant = profile > maxdist
+    idx_modes = np.asarray(is_distant).nonzero()[0]
+
+    modes = []
+    for idx in idx_modes:
+        modes.append(Mode(idx, 'max', neighbor[idx], profile[idx]))
 
     return modes

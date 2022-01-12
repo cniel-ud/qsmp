@@ -18,7 +18,7 @@ def shared_array(name, arr):
     return shm, arr_sh
 
 
-def _find_modes_worker(qsmp, iter):
+def _find_modes_worker(qsmp, iter, dirpath):
 
     n_densities = qsmp.shape[0]
     print(f'Number of densities: {n_densities}', flush=True)
@@ -32,13 +32,13 @@ def _find_modes_worker(qsmp, iter):
             print(
                 f'j={j}, maxdist:{maxdist:.3g}, aggregate:{distfunc}, PID={current_process().pid}', flush=True)
             t1 = perf_counter()
-            modes[j] = tree.find_modes(qsmp[j], maxdist, distfunc)
+            modes[j] = tree.find_modes_no_exclusion_zone(qsmp[j], maxdist, distfunc)
             t2 = perf_counter()
             print(
                 f'j={j}, maxdist={maxdist:.3g}, aggregate={distfunc}, time={t2-t1:.3g} seconds, PID={current_process().pid}', flush=True)
 
         fname = f'tree_maxdist{maxdist:.3g}_{distfunc}.pickle'
-        fpath = os.path.join(DPATH, fname)
+        fpath = os.path.join(dirpath, fname)
         with open(fpath, 'wb') as f:
             pickle.dump(modes, f, pickle.HIGHEST_PROTOCOL)
 
@@ -46,9 +46,9 @@ def _find_modes_worker(qsmp, iter):
 if __name__ == '__main__':
     mp.set_start_method('spawn')
 
-    DPATH = "/home/cmendoza/Research/QSMP/data/Study019/preictal"
+    dirpath = "/home/cmendoza/Research/QSMP/data/Study019/preictal"
     fname = 'qsmp_m350_snr-4.0_-2.0_0.0_2.0_4.0.npz'
-    fpath = os.path.join(DPATH, fname)
+    fpath = os.path.join(dirpath, fname)
 
     with np.load(fpath) as data:
         density = data['density']
@@ -71,9 +71,9 @@ if __name__ == '__main__':
 
     n_subseq, n_bw = neighbor.shape
     path_agg = ['add', 'max', 'mean']
-    # path_agg = [path_agg[1]]
+    path_agg = [path_agg[1]]
 
-    n_cpus = 1
+    n_cpus = 5
     p = mp.Pool(processes=n_cpus)
     params = list(itertools.product(maxdists, path_agg))
     n_params = len(params)
@@ -110,13 +110,15 @@ if __name__ == '__main__':
                 _find_modes_worker,
                 (
                     qsmp,
-                    params[start:stop]
+                    params[start:stop],
+                    dirpath
                 )
             )
         else:
             _find_modes_worker(
                 qsmp,
-                params[start:stop]
+                params[start:stop],
+                dirpath
             )
 
     # Clean up process pool

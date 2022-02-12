@@ -3,6 +3,8 @@ import re
 import glob
 import h5py
 import numpy as np
+import scipy.signal as signal
+import pickle
 
 # Pattern for path to file rx < id > .mat
 FILE_ID_PAT = '.*/rx(?P<id>\d+).mat$'
@@ -139,3 +141,43 @@ def fix_root(qsmp):
         profile[iinf, i_bw] = 0
 
     return profile, neighbor, density
+
+
+def get_waves(modes, ts, m, max_modes=None):
+    idx = np.asarray([mode.index for mode in modes])
+
+    n_modes = idx.size
+    if max_modes is not None:
+        n_modes = min(n_modes, max_modes)
+
+    idx = idx[:n_modes]
+    t = idx[:, None] + np.arange(m)[None, :]
+    waves = ts[t]
+
+    return waves, idx
+
+def fwhm(x):
+    n = x.shape[0]
+    fwhm = np.zeros(n, dtype=np.uint64)
+    for i in range(n):
+        imax = np.argmax(x[i])
+        ind = np.asarray(x[i] < x[i][imax]/2).nonzero()[0]
+        isort = np.argsort(np.abs(ind - imax))
+        ind = ind[isort[:2]]
+        fwhm[i] = ind[1] - ind[0]
+    return fwhm
+
+def ndxcorr(x):
+    n, m = x.shape
+    xcorr = np.zeros((n, 2*m-1))
+    for i in range(n):
+        xcorr[i] = signal.correlate(x[i], x[i])
+    return xcorr
+
+
+def load_modes(folder, maxdist, distfunc):
+    fname = f'tree_maxdist{maxdist:.3g}_{distfunc}.pickle'
+    fpath = os.path.join(folder, fname)
+    with open(fpath, 'rb') as f:
+        modes = pickle.load(f)
+    return modes

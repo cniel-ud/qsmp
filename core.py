@@ -8,7 +8,7 @@ import inspect
 
 import numpy as np
 from numba import njit, prange, cuda
-from scipy.signal import convolve
+from scipy.signal import convolve, correlate
 from scipy.ndimage.filters import maximum_filter1d, minimum_filter1d
 from scipy import linalg
 import tempfile
@@ -214,7 +214,7 @@ def get_pkg_name():  # pragma: no cover
     """
     return __name__.split(".")[0]
 
-
+@njit
 def rolling_window(a, window):
     """
     Use strides to generate rolling/sliding windows for a numpy array.
@@ -1901,3 +1901,39 @@ def _idx_to_mp(I, T, m, normalize=True):
     P[I < 0] = np.inf
 
     return P
+
+
+@njit(parallel=True, fastmath=True)
+def fwhm(x):
+    """
+    Finds the FWHM of the global maximum of x[i], for all i.
+    """
+    n = x.shape[0]
+    fwhm = np.zeros(n, dtype=np.uint64)
+    for i in prange(n):
+        imax = np.argmax(x[i])
+        ind = np.asarray(x[i] < x[i][imax]/2).nonzero()[0]
+        isort = np.argsort(np.abs(ind - imax))
+        ind = ind[isort[:2]]
+        fwhm[i] = ind[1] - ind[0]
+    return fwhm
+
+
+@njit(parallel=True, fastmath=True)
+def ndxcorr(T, m):
+    """
+    np.correlate() in Numba only allows for the first two arguments, using the 
+    'valid' mode by default. So, we need to do the zero padding of each window 
+    in T to get its autocorrelation function. floor(m/2) zeros are padded to left and the remaining zeros (to sum m) are padded to the right. This is done to have the max peak of the autocorrelation at the center of the sequence.
+    """
+    X = rolling_window(T, m)
+    X = X[0]  # np.squeeze() not available on Numba
+    n, m = X.shape
+    xcorr = np.zeros((n, m))
+    xzpadded = np.zeros(2*m - 1, X.dtype)
+    l = int(m/2)
+    u = l + m
+    for i in range(n):
+        xzpadded[l:u] = X[i].copy()
+        xcorr[i] = np.correlate(X[i], xzpadded)
+    return xcorr

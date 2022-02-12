@@ -1,4 +1,5 @@
 import numpy as np
+from time import perf_counter
 
 class Mode:
     def __init__(self, index, distfunc, parent, dist2parent) -> None:
@@ -46,41 +47,33 @@ def make_update_modes(distfunc, profile, neighbor, density):
     return update_modes
 
 
-def reduce_close_modes(modes, neighbor, m):
+def reduce_close_modes(modes, m):
     """ Merge modes that are close in time
 
     Modes that are withing ±m/2 of each other are considered to be close in
     time, with `m` being the subsequence length. Keep the first (highest
-    density) mode and discard the others. The nodes whose parent was one of the discarded modes now have the winnig mode as their parent.
+    density) mode and discard the others.
 
-    modes[i] is the i-th mode with highest density.
-    neighbor[i] is the parent of node (subsquence at time) i.
+    modes[i] is the i-th mode with highest density.    
     """
-
-    modes = np.asarray(modes)
+    
     idx = np.array([mode.index for mode in modes])
     gap = int(np.ceil(m/2))
-    i = 0
-    while i < modes.size:
+    i = 0    
+    while i < len(modes):
 
         reject = np.asarray(np.abs(idx - idx[i]) < gap).nonzero()[0]
         if reject.size > 1:
 
-            i_best = reject[0]
-            i_close = reject[1:]
-            best_mode = idx[i_best]
-            close_modes = idx[i_close]
+            i_close = reject[1:]            
+            for j in -np.sort(-i_close):
+                modes.pop(j)
 
-            for mode in close_modes:
-                children = np.asarray(neighbor == mode).nonzero()[0]
-                neighbor[children] = best_mode
-
-            modes = np.delete(modes, i_close)
-            idx = np.delete(idx, i_close)
-
+            idx = np.delete(idx, i_close)       
+        
         i += 1
-
-    return modes, neighbor
+    
+    return modes
 
 
 def find_modes(qsmp, maxdist, distfunc='add'):

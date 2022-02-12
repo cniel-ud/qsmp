@@ -1,12 +1,13 @@
 #%%
 import os, sys
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 import pltaux
 import pickle
 import numpy as np
 sys.path.insert(0, os.path.join(sys.path[0], '..'))
-import utils
-import itertools
+import utils, tree
+from copy import deepcopy
 #%% Load time series
 IMG_DIR = "/home/cmendoza/MEGA/Research/Third_Paper/proto"
 root = "/home/cmendoza/Research/QSMP/data/Study019/"
@@ -47,12 +48,39 @@ neighbor = neighbor.T[:n_sigmas]
 density = density.T[:n_sigmas]
 
 #%%
-idx = 2
 m = 350
-max_modes = 9
+max_modes = 128
+n_densities, n_pnts = density.shape
 dpath = os.path.join(root, folder)
-grid, indices, energy, fwhm = pltaux.built_grid_fixed_sigma(
-    idx, dpath, maxdists, path_agg, T, m, max_modes)
+impath = os.path.join(IMG_DIR, '128modes_full_grid_max.pdf')
+with PdfPages(impath) as pdf:
+    for maxdist in maxdists:
+        modes = utils.load_modes(dpath, maxdist, path_agg[0])
+        for i in range(n_densities):
+            modes_i = deepcopy(modes[i])
+            modes_i = tree.reduce_close_modes(modes_i, m)
+            waves, ind = utils.get_waves(modes_i, T, m)
+            waves_plt, n_rows, n_cols = pltaux.wave_matrix(waves[:max_modes])
+            plt.figure(figsize=(11, 8.5))
+            plt.plot(waves_plt.T, color='#1f77b4')
+            plt.title(f'maxdist={maxdist:.3g}, sigma={sigmas[i]:.3g}')
+            plt.axis('off')
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close()
+            energy = np.linalg.norm(waves, axis=1)**2
+            fwhm = utils.fwhm(utils.ndxcorr(waves))
+            scaled_density = density[i][ind] / fwhm
+            isort = np.argsort(scaled_density)
+            waves = waves[isort]
+            waves_plt, n_rows, n_cols = pltaux.wave_matrix(waves[:max_modes])
+            plt.figure(figsize=(11, 8.5))
+            plt.plot(waves_plt.T, color='#1f77b4')
+            plt.title(f'FWHM scaling, maxdist={maxdist:.3g}, sigma={sigmas[i]:.3g}')
+            plt.axis('off')
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close()
 #%%
 i_dist = 4
 i_agg = 0

@@ -11,7 +11,6 @@ def wave(sig, shift, centroid_length):
 
     return wave
 
-
 def align_waves(X, shift, centroid_length):
     
     nwav, wavlen = X.shape
@@ -86,66 +85,8 @@ def _factor(x):
 
     return fact1, fact2
 
-
-def get_waves(modes, ts, m, max_modes):
-    idx = np.asarray([mode.index for mode in modes])
-    
-    n_modes = idx.size
-    n_modes = min(n_modes, max_modes)
-    idx = idx[:n_modes]
-    t = idx[:, None] + np.arange(m)[None, :]
-    waves = ts[t]
-
-    return waves, idx
-
-def _fwhm(x):
-    n = x.shape[0]
-    fwhm = np.zeros(n, dtype=np.uint64)
-    for i in range(n):
-        imax = np.argmax(x[i])
-        ind = np.asarray(x[i]<x[i][imax]/2).nonzero()[0]
-        isort = np.argsort(np.abs(ind - imax))
-        ind = ind[isort[:2]]
-        fwhm[i] = ind[1] - ind[0]
-    return fwhm
-
-def _ndcorr(x):
-    n, m = x.shape
-    xcorr = np.zeros((n, 2*m-1))
-    for i in range(n):
-        xcorr[i] = signal.correlate(x[i], x[i])
-    return xcorr
-
-def built_grid_fixed_sigma(idx, folder, maxdist, distfunc, ts, m, max_modes):
-    
-    filelist = os.listdir(folder)
-    filelist = [file for file in filelist if '.pickle' in file]
-    n_maxdist = len(maxdist)
-    n_distfunc = len(distfunc)
-    grid = [None] * n_maxdist
-    indices = [None] * n_maxdist
-    energy = [None] * n_maxdist
-    fwhm = [None] * n_maxdist
-    for i in range(n_maxdist):
-        grid[i] = [None] * n_distfunc
-        indices[i] = [None] * n_distfunc
-        energy[i] = [None] * n_distfunc
-        fwhm[i] = [None] * n_distfunc
-        for j in range(n_distfunc):
-            fname = f'tree_maxdist{maxdist[i]:.3g}_{distfunc[j]}.pickle'
-            fpath = os.path.join(folder, fname)
-            with open(fpath, 'rb') as f:
-                modes = pickle.load(f)
-            
-            waves, ind = get_waves(modes[idx], ts, m, max_modes)
-            energy[i][j] = np.linalg.norm(waves, axis=1)**2            
-            fwhm[i][j] = _fwhm(_ndcorr(waves))
-            waves, n_rows, n_cols = wave_matrix(waves)
-            ind = ind.reshape((n_rows, n_cols))
-
-            energy[i][j] = energy[i][j].reshape((n_rows, n_cols))
-            fwhm[i][j] = fwhm[i][j].reshape((n_rows, n_cols))
-            grid[i][j] = waves
-            indices[i][j] = ind
-
-    return grid, indices, energy, fwhm
+def built_grid(waves):
+    """ For fixed `maxdist` and `distfunc`, modes[i] has the modes of the i-th
+    density.
+    """
+    pass

@@ -30,8 +30,7 @@ def _compute_and_update_QI_kernel(
     QT_odd,
     QT_first,
     M_T,
-    Σ_T,
-    fwhm,
+    Σ_T,    
     k,
     excl_zone,
     profile,
@@ -63,8 +62,6 @@ def _compute_and_update_QI_kernel(
         Sliding mean of time series, `T`
     Σ_T : ndarray
         Sliding standard deviation of time series, `T`
-    fwhm : numpy.ndarray
-        FWHM of the autocorrelation function of each subsequence
     k : int
         The total number of sliding windows to iterate over
     excl_zone : int

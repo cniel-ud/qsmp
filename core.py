@@ -1933,7 +1933,7 @@ def ndxcorr(T, m):
     xzpadded = np.zeros(2*m - 1, X.dtype)
     l = int(m/2)
     u = l + m
-    for i in range(n):
+    for i in prange(n):
         xzpadded[l:u] = X[i].copy()
         xcorr[i] = np.correlate(X[i], xzpadded)
     return xcorr

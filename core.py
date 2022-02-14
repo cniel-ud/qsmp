@@ -1925,9 +1925,9 @@ def ndxcorr(T, m):
     np.correlate() in Numba only allows for the first two arguments, using the 
     'valid' mode by default. So, we need to do the zero padding of each window 
     in T to get its autocorrelation function. floor(m/2) zeros are padded to left and the remaining zeros (to sum m) are padded to the right. This is done to have the max peak of the autocorrelation at the center of the sequence.
+    Assumes that T has only one dimension.
     """
     X = rolling_window(T, m)
-    X = X[0]  # np.squeeze() not available on Numba
     n, m = X.shape
     xcorr = np.zeros((n, m))
     xzpadded = np.zeros(2*m - 1, X.dtype)

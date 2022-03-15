@@ -126,7 +126,7 @@ def cat_segments(dpath, W, train_len=None):
     cumlen = np.cumsum(seglen)
     splice = cumlen[:-1]  # start index for second to last segment
 
-    return ts, splice
+    return ts, splice.astype(np.uint64)
 
 def fix_root(qsmp):
     profile, neighbor, density = qsmp

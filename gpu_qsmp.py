@@ -31,6 +31,7 @@ def _compute_and_update_QI_kernel(
     QT_first,
     M_T,
     Σ_T,
+    fwhm,
     k,
     excl_zone,
     profile,
@@ -44,50 +45,39 @@ def _compute_and_update_QI_kernel(
     ----------
     i : int
         sliding window `i`
-
     T : ndarray
         The time series or sequence for which to compute the dot product
-
     m : int
         Window size
-
     density : ndarray
         Density of subsequences of length m in T
-
     QT_even : ndarray
         The input QT array (dot product between the query sequence,`Q`, and
         time series, `T`) to use when `i` is even
-
     QT_odd : ndarray
         The input QT array (dot product between the query sequence,`Q`, and
         time series, `T`) to use when `i` is odd
-
     QT_first : ndarray
         Dot product between the first query sequence,`Q`, and time series, `T`
-
     M_T : ndarray
         Sliding mean of time series, `T`
-
     Σ_T : ndarray
         Sliding standard deviation of time series, `T`
-
+    fwhm : numpy.ndarray
+        FWHM of the autocorrelation function of each subsequence
     k : int
         The total number of sliding windows to iterate over
-
     excl_zone : int
         The half width for the exclusion zone relative to the current
         sliding window
-
     profile : ndarray
         Matrix profile. The first column consists of the global matrix profile,
         the second column consists of the left matrix profile, and the third
         column consists of the right matrix profile.
-
     indices : ndarray
         The first column consists of the matrix profile indices, the second
         column consists of the left matrix profile indices, and the third
         column consists of the right matrix profile indices.
-
     compute_QT : bool
         A boolean flag for whether or not to compute QT
 
@@ -142,8 +132,13 @@ def _compute_and_update_QI_kernel(
         if math.isnan(profile[j, 0]):
             D = np.inf
 
-        n_density = density.shape[1]
+        # Ignore subsequences in the exclusion zone
+        if (i <= zone_stop and i >= zone_start):
+            D = np.inf
 
+        n_density = density.shape[1]
+        if fwhm.size > 0:
+            D = D * fwhm[j] * fwhm[i]
         for ic in range(n_density):
             # Ignore neighbors that don't increase density
             if density[i, ic] > density[j, ic]:
@@ -207,6 +202,7 @@ def _gpu_qsmp(
     excl_zone,
     M_T_fname,
     Σ_T_fname,
+    fwhm_fname,
     QT_fname,
     QT_first_fname,
     k,
@@ -223,51 +219,40 @@ def _gpu_qsmp(
     T_fname : str
         The file name for the time series or sequence for which to compute
         the matrix profile
-
     m : int
         Window size
-
     density : ndarray
         Density of subsequences of length m in T
-
     splice : numpy.ndarray
-        If not None, T is the concatenation of multiple smaller time series
-        (segments), and `splice` has the start indices of the second to the
-        last segment, in the order of concatenation (from left to right).
-
+        If not None, T is the concatenation of multiple smaller time 
+        series (segments), and `splice` has the start indices of the 
+        second to the last segment, in the order of concatenation (from 
+        left to right).
     range_stop : int
         The index value along T_B for which to stop the matrix profile
         calculation. This parameter is here for consistency with the
         distributed `stumped` algorithm.
-
     excl_zone : int
         The half width for the exclusion zone relative to the current
         sliding window
-
     M_T_fname : str
         The file name for the sliding mean of time series, `T`
-
     Σ_T_fname : str
         The file name for the sliding standard deviation of time series, `T`
-
+    fwhm_fname : str
+        The file name for the FWHM of the autocorrelation of the subsequences
     QT_fname : str
-        The file name for the dot product between some query sequence,`Q`,
-        and time series, `T`
-
+        The file name for the dot product between some query sequence,`Q`, and time series, `T`
     QT_first_fname : str
-        The file name for the QT for the first window relative to the current
-        sliding window
-
+        The file name for the QT for the first window relative to the
+        current sliding window
     k : int
         The total number of sliding windows to iterate over
-
     dpath: string
         Absolute path to folder where checkpointing files are to be saved
-
     range_start : int
-        The starting index value along T_B for which to start the matrix
-        profile calculation. Default is 1.
-
+        The starting index value along T for which to start the distance 
+        and index calculation. Default is 1.
     device_id : int
         The (GPU) device number to use. The default value is `0`.
 
@@ -287,6 +272,7 @@ def _gpu_qsmp(
     QT_first = np.load(QT_first_fname, allow_pickle=False)
     M_T = np.load(M_T_fname, allow_pickle=False)
     Σ_T = np.load(Σ_T_fname, allow_pickle=False)
+    fwhm = np.load(fwhm_fname, allow_pickle=False)
 
     with cuda.gpus[device_id]:
 
@@ -304,8 +290,8 @@ def _gpu_qsmp(
         device_QT_first = cuda.to_device(QT_first)
         device_M_T = cuda.to_device(M_T)
         device_Σ_T = cuda.to_device(Σ_T)
+        device_fwhm = cuda.to_device(fwhm)
         device_density = cuda.to_device(density)
-
         device_profile = cuda.to_device(profile)
         device_indices = cuda.to_device(indices)
         _compute_and_update_QI_kernel[blocks_per_grid, threads_per_block](
@@ -318,6 +304,7 @@ def _gpu_qsmp(
             device_QT_first,
             device_M_T,
             device_Σ_T,
+            device_fwhm,
             k,
             excl_zone,
             device_profile,
@@ -339,6 +326,7 @@ def _gpu_qsmp(
                 device_QT_first,
                 device_M_T,
                 device_Σ_T,
+                device_fwhm,
                 k,
                 excl_zone,
                 device_profile,
@@ -350,8 +338,8 @@ def _gpu_qsmp(
             if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
                 tot_elapsed_hr += t_elapsed_hr
                 t_elapsed_hr = 0
-                chkpt_write(dpath, device_id, i, device_profile, device_indices,
-                            range_start, tot_elapsed_hr)
+                chkpt_write(dpath, device_id, i, device_profile,
+                            device_indices, range_start, tot_elapsed_hr)
 
         chkpt_clean(dpath, device_id)
 
@@ -365,29 +353,31 @@ def _gpu_qsmp(
     return profile_fname, indices_fname
 
 
-def gpu_qsmp(T, m, density, dpath, splice=None, device_id=0):
+def gpu_qsmp(T, m, density, dpath, transform=None, splice=None, device_id=0):
     """
-    Compute the z-normalized Quick Shift Matrix Profile with one or more GPU
-    devices
+    Compute the z-normalized Quick Shift Matrix Profile with one or more 
+    GPU devices.
 
-    This is a convenience wrapper around the Numba `cuda.jit` `_gpu_qsmp` function which computes the QSMP according to GPU-STOMP.
-
+    This is a convenience wrapper around the Numba `cuda.jit` 
+    `_gpu_qsmp` function which computes the QSMP according to GPU-STOMP.
+    
     Parameters
     ----------
     T : ndarray
         The time series or sequence for which to compute the QSMP
-
     m : int
         Window size
-
     density : ndarray
         Density of subsequences of length m in T
-
+    dpath: string
+        Absolute path to folder where checkpointing files are to be saved
+    transform: None or string
+        Transform to be applied to either the distances or the time series. If 'fwhm', scale the distances by the FWHM of the autocorrelation of the subsequences. If 'whiten', build a whitening filter from the average PSD of the data and apply the filter to de-emphasize low frequencies and emphasize high frequencies.
     splice : numpy.ndarray
-         If not None, T is the concatenation of multiple smaller time series
-         (segments), and `splice` has the start indices of the second to the
-         last segment, in the order of concatenation (from left to right).
-
+        If not None, T is the concatenation of multiple smaller time 
+        series (segments), and `splice` has the start indices of the 
+        second to the last segment, in the order of concatenation (from 
+        left to right).
     device_id : int or list, default 0
         The (GPU) device number to use. The default value is `0`. A list of
         valid device ids (int) may also be provided for parallel GPU-STUMP
@@ -409,6 +399,19 @@ def gpu_qsmp(T, m, density, dpath, splice=None, device_id=0):
         splice = np.full(0, 0)
 
     T, M_T, Σ_T = core.preprocess(T, m)
+    
+    if transform == 'fwhm':
+        fwhm = core.fwhm(core.ndxcorr(T, m))
+    else:
+        fwhm = np.full(0, 0)
+
+    if transform == 'whiten':
+        fs, n_taps = 512, 1001
+        f, Px_mean = core.mean_PSD(T, splice)
+        _, coeffs = core.whitening_filter(
+            f, Px_mean, n_taps=n_taps, fs=fs)
+        grp_delay = core.get_group_delay(coeffs, f, fs=fs)
+        T, splice = core.whiten(T, splice, coeffs, grp_delay)
 
     if T.ndim != 1:  # pragma: no cover
         raise ValueError(
@@ -425,6 +428,7 @@ def gpu_qsmp(T, m, density, dpath, splice=None, device_id=0):
     T_fname = core.array_to_temp_file(T)
     M_T_fname = core.array_to_temp_file(M_T)
     Σ_T_fname = core.array_to_temp_file(Σ_T)
+    fwhm_fname = core.array_to_temp_file(fwhm)
 
     if isinstance(device_id, int):
         device_ids = [device_id]
@@ -474,6 +478,7 @@ def gpu_qsmp(T, m, density, dpath, splice=None, device_id=0):
                     excl_zone,
                     M_T_fname,
                     Σ_T_fname,
+                    fwhm_fname,
                     QT_fname,
                     QT_first_fname,
                     k,
@@ -494,6 +499,7 @@ def gpu_qsmp(T, m, density, dpath, splice=None, device_id=0):
                 excl_zone,
                 M_T_fname,
                 Σ_T_fname,
+                fwhm_fname,
                 QT_fname,
                 QT_first_fname,
                 k,

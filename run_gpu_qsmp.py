@@ -27,6 +27,10 @@ if __name__ == "__main__":
                         nargs='*', help="SNR in dB")
     parser.add_argument("-t", "--train", type=int, dest="train_len", default=0,
                         help="Number of time points for training")
+    parser.add_argument('--fwhm', action="store_true", default=False,
+                        help="Scale distances by the FWHM of the autocorrelation of the subsequences")
+    parser.add_argument('--whiten', action="store_true", default=False,
+                        help="Filter the time series with a whitening filter to de-emphasize low frequencies and emphasize high-frequencies")    
 
     args = parser.parse_args()
 
@@ -68,7 +72,14 @@ if __name__ == "__main__":
     compute_density = True
     snr_str = [str(i) for i in snr]
     snr_str = '_'.join(snr_str)
-    fname = f'qsmp_m{sublen}_snr{snr_str}.npz'
+
+    transform = None
+    if args.fwhm:
+        transform = 'fwhm'
+    elif args.whiten:
+        transform = 'whiten'
+
+    fname = f'qsmp_m{sublen}_snr{snr_str}_{transform}.npz'
     fpath = os.path.join(dpath, fname)
     if os.path.isfile(fpath):
         with np.load(fpath) as data:
@@ -81,14 +92,14 @@ if __name__ == "__main__":
 
     # Compute and save density
     if compute_density:
-        density = gpu_density(T, sublen, bw, dpath, splice=splice,
-            device_id=device_ids)
+        density = gpu_density(
+            T, sublen, bw, dpath, transform=transform, 
+            splice=splice, device_id=device_ids)
         with open(fpath, 'wb') as f:
             np.savez(f, density=density)
 
-
     # Compute QSMP and indices
-    profile, indices = gpu_qsmp(T, sublen, density, dpath,
+    profile, indices = gpu_qsmp(T, sublen, density, dpath, transform=transform,
                         splice=splice, device_id=device_ids)
 
     

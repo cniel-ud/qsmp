@@ -7,6 +7,8 @@ import itertools
 import multiprocessing as mp
 from multiprocessing import shared_memory, current_process
 import pickle
+import argparse
+from pathlib import Path
 
 def shared_array(name, arr):
     try:
@@ -43,19 +45,37 @@ def _find_modes_worker(qsmp, iter, dirpath):
             pickle.dump(modes, f, pickle.HIGHEST_PROTOCOL)
 
 
+def create_arg_parser():
+    # Training settings
+    parser = argparse.ArgumentParser(
+        description='Take the QSMP tuple (density and the NN-{distance,index}), and find the modes')
+    parser.add_argument('--root', help='Path to data directory')
+    parser.add_argument('--in-file', help='input file with QSMP tuple')
+    parser.add_argument('--out-dir', help='Output folder below root folder')
+    parser.add_argument('--n-cpus', default=1, type=int, help='Number of child processes to be spawned' )
+    
+    return parser
+
+
 if __name__ == '__main__':
     mp.set_start_method('spawn')
 
-    dirpath = "/home/cmendoza/Research/QSMP/data/Study019/preictal"
-    fname = 'qsmp_m350_snr-4.0_-2.0_0.0_2.0_4.0.npz'
-    fpath = os.path.join(dirpath, fname)
+    parser = create_arg_parser()
+    args = parser.parse_args()
+    root = args.root
+    in_file = args.in_file
+    outdir = args.out_dir
+    n_cpus = args.n_cpus
 
+    outdir = os.path.join(root, outdir)
+    Path(outdir).mkdir(parents=True, exist_ok=True)
+
+    fpath = os.path.join(root, in_file)
     with np.load(fpath) as data:
         density = data['density']
         profile = data['profile']
         neighbor = data['indices']
 
-    # snr = np.r_[0, 2, 4, 8, 10]
     snr = np.r_[-4, -2, 0, 2, 4]
     var_noise = 10 ** (-snr/10)
     th = 0.1
@@ -67,13 +87,11 @@ if __name__ == '__main__':
     quantiles = np.quantile(nonan_profile, [0.75, 0.99])
     quantiles = np.log2(quantiles)
     maxdists = 2 ** np.linspace(*quantiles, 5)
-    # maxdists = maxdists[:2]
-
+    
     n_subseq, n_bw = neighbor.shape
     path_agg = ['add', 'max', 'mean']
     path_agg = [path_agg[1]]
 
-    n_cpus = 5
     p = mp.Pool(processes=n_cpus)
     params = list(itertools.product(maxdists, path_agg))
     n_params = len(params)
@@ -85,10 +103,6 @@ if __name__ == '__main__':
     profile = profile.T
     neighbor = neighbor.T
     density = density.T
-
-    # profile = profile[3:]
-    # neighbor = neighbor[3:]
-    # density = density[3:]
 
     n_densities = density.shape[0]
     qsmp = np.zeros((n_densities, 3, density.shape[1]))
@@ -111,20 +125,17 @@ if __name__ == '__main__':
                 (
                     qsmp,
                     params[start:stop],
-                    dirpath
+                    outdir
                 )
             )
         else:
             _find_modes_worker(
                 qsmp,
                 params[start:stop],
-                dirpath
+                outdir
             )
 
     # Clean up process pool
     if n_cpus > 1:  # pragma: no cover
         p.close()
         p.join()
-
-    # shm.close()
-    # shm.unlink()

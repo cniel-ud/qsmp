@@ -8,11 +8,12 @@ import inspect
 
 import numpy as np
 from numba import njit, prange, cuda
-from scipy.signal import convolve, correlate
+from scipy.signal import convolve, firls, group_delay, lfilter
 from scipy.ndimage.filters import maximum_filter1d, minimum_filter1d
 from scipy import linalg
 import tempfile
 import math
+from spectrum import MultiTapering
 
 import config
 
@@ -23,7 +24,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-@cuda.jit("b1(i8[:], i8, i8)", device=True)
+@cuda.jit(device=True)
 def is_in_splice(splice, m, i):
     # Return true if `i` is one of the m-1 samples to the left of a splice
     for ii in range(splice.size):
@@ -31,7 +32,7 @@ def is_in_splice(splice, m, i):
         b = splice[ii] - 1
         if i >= a and i <= b:
             return True
-    return False    
+    return False
 
 
 def _compare_parameters(norm, non_norm, exclude=None):
@@ -1937,3 +1938,133 @@ def ndxcorr(T, m):
         xzpadded[l:u] = X[i].copy()
         xcorr[i] = np.correlate(X[i], xzpadded)
     return xcorr
+
+
+def mean_PSD(T, splice, NFFT=2048, fs=512):
+    
+    end_seg = np.r_[splice, T.size]  # start index of each segment    
+    seglen = np.diff(np.r_[0, end_seg])
+    n_chunks_arr = np.ceil(seglen/NFFT).astype(int)
+    tot_n_chunks = np.sum(n_chunks_arr)
+    Px = np.zeros((tot_n_chunks, int(NFFT//2 + 1)))
+    ichunk = 0
+    start, end = 0, 0
+    for iseg, n_chunks in enumerate(n_chunks_arr):
+        for _ in range(n_chunks):
+            end = int(min(start+NFFT, end_seg[iseg]))
+            psd = MultiTapering(T[start:end], NW=3, NFFT=NFFT, sampling=fs)
+            Px[ichunk] = psd.psd
+            ichunk += 1
+            start = end
+    
+    f = psd.frequencies()
+    f = np.array(f)
+    Px = np.mean(Px, axis=0)
+
+    return f, Px
+
+
+def whitening_filter(f, Px, n_taps=1001, fs=512, kernel_size=20):
+    """ Build whitening filter from 1/Px
+
+    Parameters
+    ----------
+    f: numpy.ndarray(dtype=float64)
+        Vector of frequencies, in Hz
+    Px: numpy.ndarray(dtype=float64)
+        PSD estimate of the data
+    n_taps: int
+        Number of taps of the filter
+    fs: float
+        Sampling frequency, in Hz
+    kernel_size: int
+        Length of moving average filter
+
+    Returns
+    -------
+    Px: numpy.ndarray(dtype=float64)
+        Desired PSD of filter response
+    b: numpy.ndarray(dtype=float64)
+        Coefficients of a linear-phase FIR filter with desired gain equal to 1/Px
+
+    The desired gain is smoothed with a moving average filter before computing the coefficients of the FIR filter.
+    """
+    
+    Px = 1/Px
+    kernel = np.ones(kernel_size)/kernel_size
+    Px = np.convolve(Px, kernel, mode='same')
+    desired_gain = np.sqrt(Px)
+    return Px, firls(n_taps, f[:-1], desired_gain[:-1], fs=fs)
+
+
+def get_group_delay(coeffs, freq, fs=512):
+    """ Compute group delay from linear-phase filter
+
+    Parameters
+    ----------
+    coeffs: numpy.ndarray(dtype=float64)
+        Vector of coefficients of a linear-phase FIR filter
+    freq: numpy.ndarray(dtype=float64)
+        Vector of frequencies, in Hz. Used to compute the `grp_delay`, the 
+        group delay. The group delay is expected to be constant across all the 
+        range of frequencies of interest.
+    fs: int
+        Sampling frequency
+    
+    Returns
+    -------
+    grp_delay: int
+        Group delay of filter with coefficients `coeffs`.
+    """
+
+    _, grp_delay = group_delay((coeffs, 1), freq, fs=fs)
+    grp_delay = np.unique(np.round(grp_delay).astype(int))
+    assert grp_delay.size == 1, 'Not a linear filter'
+    return grp_delay[0]
+
+
+def whiten(T, splice, coeffs, grp_delay):
+    """ Whiten the time series T
+
+    Parameters
+    ----------
+    T: numpy.ndarray(dtype=float64)
+        Time series. T.shape=(l,).
+    splice: numpy.ndarray(dtype=uint64)
+        splice[i] has the start index of the (i+1)th-segment (e.g., 2nd segment 
+        starts at splice[0], 3rd segment at splice[1], and so on), for i=0,..,
+        n, and n+1 being the number of segments that were concatenated to form 
+        T.
+    coeffs: numpy.ndarray(dtype=float64)
+        Vector of coefficients of a linear-phase FIR filter
+    grp_delay: int
+        Group delay of filter with coefficients `coeffs`.
+    
+    Returns
+    -------
+    filt_T: numpy.ndarray(dtype=float64)
+        Filtered time series. If splice is not empty, filter each segment, discard first `grp_delay` samples, and concatenate back.
+    new_splice: numpy.ndarray(dtype=uint64)
+        Update splice indices, after discarding the first `grp_delay` samples 
+        on each filtered segment.
+    """
+    
+    n_seg = splice.size + 1
+    end_seg = np.r_[splice, T.size]  # end index of each segment
+    end_seg = end_seg.astype(np.uint64)
+
+    filt_T = np.zeros(T.size-n_seg*grp_delay)
+
+    start = 0
+    dstart = 0
+    new_splice = np.zeros(splice.shape, dtype=np.uint64)
+    for i, end in enumerate(end_seg):
+        x = lfilter(coeffs, 1, T[start:end], axis=0)
+        dend = int(end - (i+1)*grp_delay)
+        filt_T[dstart:dend] = x[grp_delay:]
+        start = end        
+        dstart = dend
+        if i > 0:
+            new_splice[i-1] = dstart
+
+    return filt_T, new_splice

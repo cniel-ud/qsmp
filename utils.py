@@ -126,7 +126,7 @@ def cat_segments(dpath, W, train_len=None):
     cumlen = np.cumsum(seglen)
     splice = cumlen[:-1]  # start index for second to last segment
 
-    return ts, splice.astype(np.uint64)
+    return ts, splice
 
 def fix_root(qsmp):
     profile, neighbor, density = qsmp
@@ -158,7 +158,7 @@ def get_waves(modes, ts, m, max_modes=None):
 
 def fwhm(x):
     n = x.shape[0]
-    fwhm = np.zeros(n, dtype=np.uint64)
+    fwhm = np.zeros(n, dtype=np.int64)
     for i in range(n):
         imax = np.argmax(x[i])
         ind = np.asarray(x[i] < x[i][imax]/2).nonzero()[0]

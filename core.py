@@ -1910,7 +1910,7 @@ def fwhm(x):
     Finds the FWHM of the global maximum of x[i], for all i.
     """
     n = x.shape[0]
-    fwhm = np.zeros(n, dtype=np.uint64)
+    fwhm = np.zeros(n, dtype=np.int64)
     for i in prange(n):
         imax = np.argmax(x[i])
         ind = np.asarray(x[i] < x[i][imax]/2).nonzero()[0]
@@ -2030,7 +2030,7 @@ def whiten(T, splice, coeffs, grp_delay):
     ----------
     T: numpy.ndarray(dtype=float64)
         Time series. T.shape=(l,).
-    splice: numpy.ndarray(dtype=uint64)
+    splice: numpy.ndarray(dtype=int64)
         splice[i] has the start index of the (i+1)th-segment (e.g., 2nd segment 
         starts at splice[0], 3rd segment at splice[1], and so on), for i=0,..,
         n, and n+1 being the number of segments that were concatenated to form 
@@ -2044,23 +2044,23 @@ def whiten(T, splice, coeffs, grp_delay):
     -------
     filt_T: numpy.ndarray(dtype=float64)
         Filtered time series. If splice is not empty, filter each segment, discard first `grp_delay` samples, and concatenate back.
-    new_splice: numpy.ndarray(dtype=uint64)
+    new_splice: numpy.ndarray(dtype=int64)
         Update splice indices, after discarding the first `grp_delay` samples 
         on each filtered segment.
     """
     
     n_seg = splice.size + 1
     end_seg = np.r_[splice, T.size]  # end index of each segment
-    end_seg = end_seg.astype(np.uint64)
+    end_seg = end_seg
 
     filt_T = np.zeros(T.size-n_seg*grp_delay)
 
     start = 0
     dstart = 0
-    new_splice = np.zeros(splice.shape, dtype=np.uint64)
+    new_splice = np.zeros(splice.shape, dtype=np.int64)
     for i, end in enumerate(end_seg):
         x = lfilter(coeffs, 1, T[start:end], axis=0)
-        dend = int(end - (i+1)*grp_delay)
+        dend = end - (i+1)*grp_delay
         filt_T[dstart:dend] = x[grp_delay:]
         start = end        
         dstart = dend

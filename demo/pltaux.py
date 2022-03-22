@@ -47,15 +47,16 @@ def wave_matrix(X, hgap=4, vgap=None, ncols=None):
     """
     nwav, wavlen = X.shape
 
-    if ncols is None: # ncols > 1
+    if ncols is None:
         ncols, _ = _factor(nwav)    
-        hgap = np.ceil(wavlen/hgap).astype('int')
-        nangap = np.full((nwav, hgap), np.nan)
-        X = np.hstack((X, nangap))        
-        ind = np.arange(ncols, nwav-ncols+1, ncols)
-        X = np.split(X, ind)
-        X = np.vstack(list(map(np.ravel, X)))
-        X = X[:, :-hgap]
+
+    hgap = np.ceil(wavlen/hgap).astype('int')
+    nangap = np.full((nwav, hgap), np.nan)
+    X = np.hstack((X, nangap))        
+    ind = np.arange(ncols, nwav-ncols+1, ncols)
+    X = np.split(X, ind)
+    X = np.vstack(list(map(np.ravel, X)))
+    X = X[:, :-hgap]
 
     nrows = np.int(nwav/ncols)
 

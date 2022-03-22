@@ -143,18 +143,30 @@ def fix_root(qsmp):
     return profile, neighbor, density
 
 
-def get_waves(modes, ts, m, max_modes=None):
-    idx = np.asarray([mode.index for mode in modes])
+def get_waves(start_index, time_series, wave_lenght):
+    """ Extract waves using start index and wave length
 
-    n_modes = idx.size
-    if max_modes is not None:
-        n_modes = min(n_modes, max_modes)
+    start_index.shape=(k,)
+    time_series.shape=(N,)
+    wave_lenght is an int    
+    """
+    if isinstance(start_index, np.ndarray):
+        if issubclass(start_index.dtype.type, np.integer):
+            t = start_index[:, None] + np.arange(wave_lenght)[None, :]
+        else:
+            raise TypeError(
+                f"Only arrays of integer dtypes are supported, but {(start_index).dtype.type} was passed.")
+            
+    elif isinstance(start_index, (int, np.integer)):
+        t = np.arange(start_index, start_index + wave_lenght)
+    else:
+        raise TypeError(
+            f"Only int or numpy.ndarray are supported, but {type(start_index).__name__} was passed.")
+        
 
-    idx = idx[:n_modes]
-    t = idx[:, None] + np.arange(m)[None, :]
-    waves = ts[t]
+    waves = time_series[t]
 
-    return waves, idx
+    return waves
 
 def fwhm(x):
     n = x.shape[0]
@@ -181,3 +193,52 @@ def load_modes(folder, maxdist, distfunc):
     with open(fpath, 'rb') as f:
         modes = pickle.load(f)
     return modes
+
+
+def where_equal(x, y):
+    """ Find indices in `x` where `x`==`y`
+
+    Parameters
+    ----------
+    x: numpy.array
+        Reference 1D array. x.shape=(N,). `x` is assumed to be sorted in ascending order.
+    y: numpy.array
+        Query 1D array. y.shape=(m,). N<m. `y` is assumed to have unique (non-repeating) values.
+    
+    Returns
+    -------
+    idx: numpy.array
+        Indices of `x` where values of `x` are in `y`
+    
+    Notes
+    -----
+    A naive for-loop implementation will be O(N*m). Since searchsorted uses binary search, I believe the cost here is O(log(N)*m)?
+    """
+
+    start = np.searchsorted(x, y, side='left')
+    end = np.searchsorted(x, y, side='right')
+    idx = np.r_[tuple(slice(s, e) for s, e in zip(start, end))]
+
+    return idx
+
+def phase_correction(ind, end_seg, grp_delay, direction='backward'):
+    """ Shift indices according to group delay caused by linear-phase filter.
+
+    `ind` is a vector of NN-indices of time series subsequences
+    `end_seg[i]` has the end index of the i-th segment in the time series.
+    `grp_delay` is the grp_delay caused by a linear-phase filter when applied 
+    to  the time series.
+    `direction` indicates the direction of the correction (shift). 'backward' 
+    is to convert an index in the filtered time series to its equivalent in the 
+    unfiltered time series.
+    """
+
+    if direction == 'forward':
+        grp_delay = -np.abs(grp_delay)
+    elif direction == 'backward':
+        grp_delay = np.abs(grp_delay)
+
+    i_seg = np.searchsorted(end_seg, ind) + 1
+    ind = ind + i_seg*grp_delay
+
+    return ind

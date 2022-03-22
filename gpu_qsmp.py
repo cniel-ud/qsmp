@@ -281,7 +281,7 @@ def _gpu_qsmp(
 
         for i in splice:
             profile[i-m+1:i, :] = np.nan
-            indices[i-m+1:i, :] = -1
+            indices[i-m+1:i, :] = np.arange(i-m+1,i)
 
 
         device_T = cuda.to_device(T)

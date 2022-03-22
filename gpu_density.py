@@ -520,4 +520,4 @@ def gpu_density(T, m, bw, dpath, transform=None, splice=None, device_id=0):
     if core.are_distances_too_small(density[0], threshold=threshold):  # pragma: no cover
         logger.warning(f"A large number of values are smaller than {threshold}.")
 
-    return density[0]
+    return T, splice, density[0]

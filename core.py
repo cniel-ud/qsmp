@@ -2059,12 +2059,14 @@ def whiten(T, splice, coeffs, grp_delay):
     dstart = 0
     new_splice = np.zeros(splice.shape, dtype=np.int64)
     for i, end in enumerate(end_seg):
+
+        if i > 0:
+            new_splice[i-1] = dstart
+
         x = lfilter(coeffs, 1, T[start:end], axis=0)
         dend = end - (i+1)*grp_delay
         filt_T[dstart:dend] = x[grp_delay:]
         start = end        
         dstart = dend
-        if i > 0:
-            new_splice[i-1] = dstart
 
     return filt_T, new_splice

@@ -1944,14 +1944,17 @@ def mean_PSD(T, splice, NFFT=2048, fs=512):
     
     end_seg = np.r_[splice, T.size]  # start index of each segment    
     seglen = np.diff(np.r_[0, end_seg])
-    n_chunks_arr = np.ceil(seglen/NFFT).astype(int)
+    n_chunks_arr = np.floor(seglen/NFFT).astype(int)
     tot_n_chunks = np.sum(n_chunks_arr)
     Px = np.zeros((tot_n_chunks, int(NFFT//2 + 1)))
     ichunk = 0
     start, end = 0, 0
     for iseg, n_chunks in enumerate(n_chunks_arr):
-        for _ in range(n_chunks):
-            end = int(min(start+NFFT, end_seg[iseg]))
+        for j in range(n_chunks):
+            if j == n_chunks-1: # last chunk might be bigger
+                end = end_seg[iseg]
+            else:
+                end = start+NFFT
             psd = MultiTapering(T[start:end], NW=3, NFFT=NFFT, sampling=fs)
             Px[ichunk] = psd.psd
             ichunk += 1
@@ -1970,9 +1973,9 @@ def whitening_filter(f, Px, n_taps=1001, fs=512, kernel_size=20):
     Parameters
     ----------
     f: numpy.ndarray(dtype=float64)
-        Vector of frequencies, in Hz
+        Vector of frequencies, in Hz. f.shape=(N,). N is assumed to be odd.
     Px: numpy.ndarray(dtype=float64)
-        PSD estimate of the data
+        PSD estimate of the data. Px.shape=(N,).
     n_taps: int
         Number of taps of the filter
     fs: float
@@ -1987,7 +1990,17 @@ def whitening_filter(f, Px, n_taps=1001, fs=512, kernel_size=20):
     b: numpy.ndarray(dtype=float64)
         Coefficients of a linear-phase FIR filter with desired gain equal to 1/Px
 
+    Notes
+    -----
     The desired gain is smoothed with a moving average filter before computing the coefficients of the FIR filter.
+
+    firls requires an even number of edges (the flattened `bands` argument must 
+    have an even number of elements). Since `f` and `Px` are assumed to have an 
+    odd length, we discard their last element (e.g., f[:-1] is passed to firls, 
+    instead of f)
+
+    XXX: We are not normalizing `desired_gain`, so it can be bigger than one. 
+    Should we normalize??
     """
     
     Px = 1/Px
@@ -2033,7 +2046,7 @@ def whiten(T, splice, coeffs, grp_delay):
     splice: numpy.ndarray(dtype=int64)
         splice[i] has the start index of the (i+1)th-segment (e.g., 2nd segment 
         starts at splice[0], 3rd segment at splice[1], and so on), for i=0,..,
-        n, and n+1 being the number of segments that were concatenated to form 
+        n-2, and n being the number of segments that were concatenated to form 
         T.
     coeffs: numpy.ndarray(dtype=float64)
         Vector of coefficients of a linear-phase FIR filter

@@ -222,7 +222,10 @@ def _gpu_qsmp(
     m : int
         Window size
     density : ndarray
-        Density of subsequences of length m in T
+        Density of subsequences of length m in T. density.shape(n, k), with `k` 
+        being the number of density estimates. A different tuple of distances 
+        and indices is computed for each density estimate. `n` is the number of 
+        subsequences.
     splice : numpy.ndarray
         If not None, T is the concatenation of multiple smaller time 
         series (segments), and `splice` has the start indices of the 
@@ -279,9 +282,11 @@ def _gpu_qsmp(
         range_start, profile, indices = chkpt_read(\
             dpath, device_id, range_start, k, density.shape[1])
 
+        n_sigmas = density.shape[1]
         for i in splice:
             profile[i-m+1:i, :] = np.nan
-            indices[i-m+1:i, :] = np.arange(i-m+1,i)
+            splice_ind = np.arange(i-m+1, i)[:, None]
+            indices[i-m+1:i, :] = np.repeat(splice_ind, n_sigmas, axis=1)
 
 
         device_T = cuda.to_device(T)

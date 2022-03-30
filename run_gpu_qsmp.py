@@ -62,7 +62,6 @@ if __name__ == "__main__":
     fnames = {
         'time series': 'qsmp_T_splice.npz'
     }
-    transform = None
     if args.fwhm:
         transform = 'fwhm'
         fnames['Qtuple'] = f'qsmp_m{sublen}_snr{snr_str}_fwhm.npz'
@@ -70,6 +69,10 @@ if __name__ == "__main__":
         transform = 'whiten'
         fnames['whitened time series'] = 'qsmp_T_splice_whitened.npz'
         fnames['Qtuple'] = f'qsmp_m{sublen}_snr{snr_str}_whiten.npz'
+    else:
+        transform = None
+        fnames['Qtuple'] = f'qsmp_m{sublen}_snr{snr_str}.npz'
+
 
     get_data = True
     fpath = os.path.join(dpath, fnames['time series'])

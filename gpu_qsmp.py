@@ -128,10 +128,6 @@ def _compute_and_update_QI_kernel(
             ) or D < config.STUMPY_D_SQUARED_THRESHOLD:
                 D = 0
 
-        # Ignore sequences that are at splice
-        if math.isnan(profile[j, 0]):
-            D = np.inf
-
         # Ignore subsequences in the exclusion zone
         if (i <= zone_stop and i >= zone_start):
             D = np.inf
@@ -141,6 +137,7 @@ def _compute_and_update_QI_kernel(
             D = D * fwhm[j] * fwhm[i]
         for ic in range(n_density):
             # Ignore neighbors that don't increase density
+            # This includes the ones that are at the splice
             if density[i, ic] > density[j, ic]:
                 if D < profile[j, ic]:
                     profile[j, ic] = D
@@ -284,10 +281,9 @@ def _gpu_qsmp(
 
         n_sigmas = density.shape[1]
         for i in splice:
-            profile[i-m+1:i, :] = np.nan
+            profile[i-m+1:i, :] = 0
             splice_ind = np.arange(i-m+1, i)[:, None]
             indices[i-m+1:i, :] = np.repeat(splice_ind, n_sigmas, axis=1)
-
 
         device_T = cuda.to_device(T)
         device_QT_odd = cuda.to_device(QT)

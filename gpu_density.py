@@ -377,7 +377,8 @@ def gpu_density(T, m, bw, dpath, transform=None, splice=None, device_id=0):
     T, M_T, Σ_T = core.preprocess(T, m)
     
     if transform == 'fwhm':
-        fwhm = core.fwhm(core.ndxcorr(T, m))
+        fwhm = core.fwhm(core.ndxcorr(T, m, splice))
+        fwhm = core.fill_fwhm(fwhm, splice, m)
     else:
         fwhm = np.full(0, 0)
 

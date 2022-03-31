@@ -216,7 +216,7 @@ def get_pkg_name():  # pragma: no cover
     return __name__.split(".")[0]
 
 
-@njit(parallel=True)
+@njit
 def rolling_window(a, window, splice=None):
     """    
     Use strides to generate rolling/sliding windows for a numpy array.
@@ -252,7 +252,7 @@ def rolling_window(a, window, splice=None):
         idx = np.hstack((np.array([0]), cum_win))
         tot_win = np.sum(n_win)
         out = np.zeros((tot_win, window))
-        for i in prange(n_seg):
+        for i in range(n_seg):
             shape = a[start[i]:end[i]].shape[:-1] + \
                 (a[start[i]:end[i]].shape[-1] - window + 1, window)
             strides = a[start[i]:end[i]].strides +\

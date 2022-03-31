@@ -1932,19 +1932,35 @@ def _idx_to_mp(I, T, m, normalize=True):
     return P
 
 
-@njit(parallel=True, fastmath=True)
 def fwhm(x):
     """
     Finds the FWHM of the global maximum of x[i], for all i.
+
+    This function is intended for a curve `x` that is symmetric around its 
+    global maxima (like the autocorrelation function). To compute the FWHM, we 
+    consider two cases:
+    1) The curve increases monotonically from 0 to its global maxima (covered 
+    in the 'else' clause). There is only one broad peak in `x`.
+    2) The curve has one main peak centered around its global maxima, and some side-band ripples (other lower-amplitude local maxima on both sides). This is covered in the 'if' clause.
     """
-    n = x.shape[0]
-    fwhm = np.zeros(n, dtype=np.int64)
+    n, m = x.shape
+    fwhm = np.zeros(n, dtype=np.uint64)
     for i in prange(n):
         imax = np.argmax(x[i])
-        ind = np.asarray(x[i] < x[i][imax]/2).nonzero()[0]
-        isort = np.argsort(np.abs(ind - imax))
-        ind = ind[isort[:2]]
-        fwhm[i] = ind[1] - ind[0]
+        diff1 = np.diff(x[i])
+        left = diff1[:imax] < 0
+        if left.any():
+            left = np.asarray(left).nonzero()[0][-1]
+            right = imax + np.asarray(diff1[imax:] > 0).nonzero()[0][0]
+        else:
+            left = -1
+            right = m - 1
+        idx = np.arange(left+1, right+1)
+        half_range = (x[i][idx].max()-x[i][idx].min())/2 + x[i][idx].min()
+        idx = idx[x[i][idx] < half_range]
+        isort = np.argsort(np.abs(idx - imax))
+        idx = np.sort(idx[isort[:2]])
+        fwhm[i] = idx[1] - idx[0]
     return fwhm
 
 

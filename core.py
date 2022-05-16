@@ -1932,6 +1932,7 @@ def _idx_to_mp(I, T, m, normalize=True):
     return P
 
 
+@njit(parallel=True)
 def fwhm(x):
     """
     Finds the FWHM of the global maximum of x[i], for all i.
@@ -1942,9 +1943,11 @@ def fwhm(x):
     1) The curve increases monotonically from 0 to its global maxima (covered 
     in the 'else' clause). There is only one broad peak in `x`.
     2) The curve has one main peak centered around its global maxima, and some side-band ripples (other lower-amplitude local maxima on both sides). This is covered in the 'if' clause.
+
+    Normalize by max(): 
     """
     n, m = x.shape
-    fwhm = np.zeros(n, dtype=np.uint64)
+    fwhm = np.zeros(n)
     for i in prange(n):
         imax = np.argmax(x[i])
         diff1 = np.diff(x[i])
@@ -1961,6 +1964,9 @@ def fwhm(x):
         isort = np.argsort(np.abs(idx - imax))
         idx = np.sort(idx[isort[:2]])
         fwhm[i] = idx[1] - idx[0]
+    
+    fwhm = fwhm / np.max(fwhm)
+
     return fwhm
 
 
@@ -1976,7 +1982,7 @@ def fill_fwhm(fwhm, splice, m):
     splice_ext = np.r_[0, splice, I[-1]+(m-1)*splice.size]
     n_seg = splice_ext.size - 1
     new_len = splice_ext[-1] + 1
-    ext_fwhm = np.ones(new_len, dtype=np.int64)
+    ext_fwhm = np.ones(new_len)
     for i in range(n_seg):
         idx = (I >= splice_ext[i]) & (I < splice_ext[i+1])
         ext_idx = I[idx] + (m-1)*i

@@ -297,23 +297,29 @@ def k_neighborhood(roots, k, NNdist, NNindex, density, gap):
     Return a vector `idx` with the indices of each root followed by the 
     indices of the their k-NN, sorted in ascending order of distance. `idx`
     has shape (m*(k+1),). idx[0]=roots[0], idx[1] is the nearest neighbor of idx[0], excluding itselft, idx[2] is the second closest neighbor of idx[0], 
-    idx[k+1]=roots[1], and so on.
+    idx[k+1]=roots[1], and so on. 
+    
+    The type of idx is float, as we might have NaN indices in cases where the neighborhood of a mode is too small, and NaN is represented as float.
 
     This function creates the indices that are then used to extract the waves and plot them.
-
-    XXX: discard here the temporally close neighbors??
     """
 
     n_roots = roots.size
-    idx = np.zeros(n_roots*(k+1), dtype=np.int64)
+    idx = np.zeros(n_roots*(k+1))
 
     for i, root in enumerate(roots):
         children = np.asarray(NNindex == root).nonzero()[0]
         children = drop_trivial_matches(children, density, gap)
-        ind_topk = np.argpartition(NNdist[children], k+1)[:k+1]
-        children = children[ind_topk]
-        isort = np.argsort(NNdist[children])        
-        idx[i*(k+1):(i+1)*(k+1)] = children[isort]
+        n_children = children.size - 1
+        if n_children <= k:
+            isort = np.argsort(NNdist[children])
+            idx[i*(k+1):(i+1)*(k+1)] = np.r_[
+                children[isort], np.full(k-n_children, fill_value=np.nan)]
+        else:
+            ind_topk = np.argpartition(NNdist[children], k+1)[:k+1]
+            children = children[ind_topk]
+            isort = np.argsort(NNdist[children])        
+            idx[i*(k+1):(i+1)*(k+1)] = children[isort]
 
     return idx
 

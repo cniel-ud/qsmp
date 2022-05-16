@@ -332,18 +332,39 @@ def recompute_distances(NNindex, time_series, wave_length):
     roots, cluster_size = np.unique(NNindex, return_counts=True)
     roots = roots[cluster_size > 1] # ignore orphan roots
     n_roots = roots.size
-
+    max_chunk_size = 1024**3   # in bytes
+    nbytes_per_wave = (wave_length*time_series.dtype.alignment)
+    max_num_of_rows = np.int(max_chunk_size/nbytes_per_wave)
     for i in range(n_roots):
         
-        node_indices = np.asarray(NNindex == roots[i]).nonzero()[0]
-        waves = utils.get_waves(node_indices, time_series, wave_length)
-        mu, std = np.mean(waves, axis=1), np.std(waves, axis=1)
-        std[std==0] = 1
-        waves = (waves - mu[:,None])/std[:,None]
         root = utils.get_waves(roots[i], time_series, wave_length)
         mu, std = np.mean(root), np.std(root)
         if std == 0: std = 1
         root = (root - mu)/std
-        NNdist[node_indices] = 2*wave_length - 2*waves @ root
+        
+        node_indices = np.asarray(NNindex == roots[i]).nonzero()[0]
+        n_nodes = node_indices.size
+        if n_nodes > max_num_of_rows:
+            n_chunks = np.int(n_nodes/max_num_of_rows) + 1
+            start = 0
+            for _ in np.arange(n_chunks):
+                end = min(start+max_num_of_rows, n_nodes)
+                waves = utils.get_waves(
+                    node_indices[start:end], time_series, wave_length)
+                mu, std = np.mean(waves, axis=1), np.std(waves, axis=1)
+                std[std == 0] = 1
+                waves = (waves - mu[:, None])/std[:, None]
+                sq_dist = 2*wave_length - 2*waves @ root
+                sq_dist[sq_dist < 1e-10] = 0
+                NNdist[node_indices[start:end]] = np.sqrt(sq_dist)
+                start = end
+        else:
+            waves = utils.get_waves(node_indices, time_series, wave_length)
+            mu, std = np.mean(waves, axis=1), np.std(waves, axis=1)
+            std[std==0] = 1
+            waves = (waves - mu[:,None])/std[:,None]
+            sq_dist = 2*wave_length - 2*waves @ root
+            sq_dist[sq_dist < 1e-10] = 0
+            NNdist[node_indices] = np.sqrt(sq_dist)
     
     return NNdist

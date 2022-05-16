@@ -160,7 +160,7 @@ def find_modes_no_exclusion_zone(qsmp, maxdist, distfunc):
     return modes
 
 
-def cut_tree(parent, distance, max_dist):
+def cut_tree(parent, distance, max_dist, in_place=False):
     """ Cut the tree at edges where distance > max_dist
 
     Parameters
@@ -181,12 +181,14 @@ def cut_tree(parent, distance, max_dist):
     """
 
     too_far = distance > max_dist
+    if not in_place:
+        parent, distance = parent.copy(), distance.copy()
+    
     parent[too_far] = np.arange(parent.size)[too_far]
     distance[too_far] = 0
 
-    return parent, distance
-
-
+    if not in_place:
+        return parent, distance
 
 
 def mark_with_root(parent):

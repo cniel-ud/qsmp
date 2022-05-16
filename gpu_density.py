@@ -28,7 +28,7 @@ def _compute_and_update_density_kernel(
     i,
     T,
     m,
-    bw,
+    sigma,
     splice,
     QT_even,
     QT_odd,
@@ -51,8 +51,8 @@ def _compute_and_update_density_kernel(
         The time series or sequence for which to compute the dot product
     m : int
         Window size
-    bw : numpy.ndarray
-        Bandwidth parameter of the Gaussian kernel used to estimate the density.
+    sigma : numpy.ndarray
+        Standard deviation of the Gaussian kernel used to estimate the density.
     splice : numpy.ndarray
          If not None, T is the concatenation of multiple smaller time series
          (segments), and `splice` has the start indices of the second to the
@@ -128,11 +128,11 @@ def _compute_and_update_density_kernel(
         if (i <= zone_stop and i >= zone_start) or is_in_splice:
             D = np.inf
 
-        n_bw = bw.size
+        n_sigma = sigma.size
         if fwhm.size > 0:
-            D = D * fwhm[j] * fwhm[i]
-        for ic in range(n_bw):
-            P = math.exp(-D/bw[ic])
+            D = D * max(fwhm[j],fwhm[i])
+        for ic in range(n_sigma):
+            P = math.exp(-D/(2*sigma[ic]**2))
             density[j, ic] = density[j, ic] + P
 
 
@@ -183,7 +183,7 @@ def chkpt_clean(dpath, device_id):
 def _gpu_density(
     T_fname,
     m,
-    bw,
+    sigma,
     splice,
     range_stop,
     excl_zone,
@@ -208,8 +208,8 @@ def _gpu_density(
         the density
     m : int
         Window size
-    bw : numpy.ndarray
-        Bandwidth parameter of the Gaussian kernel used to estimate the density.
+    sigma : numpy.ndarray
+        Standard deviation of the Gaussian kernel used to estimate the density.
     splice : numpy.ndarray
          If not None, T is the concatenation of multiple smaller time 
          series (segments), and `splice` has the start indices of the 
@@ -258,12 +258,12 @@ def _gpu_density(
     Σ_T = np.load(Σ_T_fname, allow_pickle=False)
     fwhm = np.load(fwhm_fname, allow_pickle=False)
 
-    n_bw = bw.size
+    n_sigma = sigma.size
 
     with cuda.gpus[device_id]:
 
         range_start, density = chkpt_read(
-            dpath, device_id, range_start, k, n_bw)
+            dpath, device_id, range_start, k, n_sigma)
         device_T = cuda.to_device(T)
         device_QT_odd = cuda.to_device(QT)
         device_QT_even = cuda.to_device(QT)
@@ -272,14 +272,14 @@ def _gpu_density(
         device_Σ_T = cuda.to_device(Σ_T)
         device_fwhm = cuda.to_device(fwhm)
         device_splice = cuda.to_device(splice)
-        device_bw = cuda.to_device(bw)
+        device_sigma = cuda.to_device(sigma)
 
         device_density = cuda.to_device(density)
         _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
             range_start - 1,
             device_T,
             m,
-            device_bw,
+            device_sigma,
             device_splice,
             device_QT_even,
             device_QT_odd,
@@ -301,7 +301,7 @@ def _gpu_density(
                 i,
                 device_T,
                 m,
-                device_bw,
+                device_sigma,
                 device_splice,
                 device_QT_even,
                 device_QT_odd,
@@ -330,7 +330,7 @@ def _gpu_density(
     return density_fname
 
 
-def gpu_density(T, m, bw, dpath, transform=None, splice=None, device_id=0):
+def gpu_density(T, m, sigma, dpath, transform=None, splice=None, device_id=0):
     """
     Estimate the density of subsequences of the z-normalized matrix 
     profile with one or more GPU devices.
@@ -345,8 +345,8 @@ def gpu_density(T, m, bw, dpath, transform=None, splice=None, device_id=0):
         The time series or sequence for which to compute the matrix profile
     m : int
         Window size
-    bw : numpy.ndarray
-        Bandwidth parameter of the Gaussian kernel used to estimate the density.
+    sigma : numpy.ndarray
+        Standard deviation of the Gaussian kernel used to estimate the density.
     dpath: string
         Absolute path to folder where checkpointing files are to be saved
     transform: None or string
@@ -377,6 +377,7 @@ def gpu_density(T, m, bw, dpath, transform=None, splice=None, device_id=0):
     T, M_T, Σ_T = core.preprocess(T, m)
     
     if transform == 'fwhm':
+        #XXX: this can take quite some time. Should we compute it in the GPU?
         fwhm = core.fwhm(core.ndxcorr(T, m, splice))
         fwhm = core.fill_fwhm(fwhm, splice, m)
     else:
@@ -451,7 +452,7 @@ def gpu_density(T, m, bw, dpath, transform=None, splice=None, device_id=0):
                 (
                     T_fname,
                     m,
-                    bw,
+                    sigma,
                     splice,
                     stop,
                     excl_zone,
@@ -472,7 +473,7 @@ def gpu_density(T, m, bw, dpath, transform=None, splice=None, device_id=0):
             density[idx] = _gpu_density(
                 T_fname,
                 m,
-                bw,
+                sigma,
                 splice,
                 stop,
                 excl_zone,

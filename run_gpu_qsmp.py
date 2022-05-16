@@ -23,7 +23,7 @@ if __name__ == "__main__":
                         help="Path to matrix W with spatial filters")
     parser.add_argument("-m", "--subseq-len", dest="sublen", type=int,
                         help="Subsequence (query) length")
-    parser.add_argument("--snr", type=float, dest="snr", default=5,
+    parser.add_argument("--sigma", type=float, dest="sigma", default=5,
                         nargs='*', help="SNR in dB")
     parser.add_argument("-t", "--train", type=int, dest="train_len", default=0,
                         help="Number of time points for training")
@@ -37,24 +37,19 @@ if __name__ == "__main__":
     dpath = args.dpath
     wpath = args.wpath
     sublen = args.sublen
-    snr = args.snr
+    sigma = args.sigma
     train_len = args.train_len
 
     device_ids = [device.id for device in numba.cuda.list_devices()]
 
     # The Gaussian kernel is of the form
-    #   f(x) = exp(-x^2/bw)
-    #   with `bw` being the bandwidth parameter
-    if not isinstance(snr, list): snr = [snr]
-    snr = np.array(sorted(snr))
-    var_noise = 10 ** (-snr/10) # signal has unit variance (z-normalization)
-    # At max noise level (3*sqrt(var_noise)), the contribution to the density of a 
-    # given pair is th% (fraction of max. value of density (1)).
-    th = 0.1
-    bw = (9 * var_noise) / np.log(1/th)
+    #   f(x) = exp(-x^2/(2*sigma^2))
+    #   with `sigma` being the bandwidth parameter
+    if not isinstance(sigma, list): snr = [sigma]
+    sigma = np.array(sigma)    
 
-    snr_str = [str(i) for i in snr]
-    snr_str = '_'.join(snr_str)
+    sigma_str = [str(i) for i in sigma]
+    sigma_str = '_'.join(sigma_str)
 
     #XXX: we are currently taking the first segments whose cumulative length 
     # is >= args.train. This parameter is NOT currently reflected in the naming 
@@ -64,14 +59,14 @@ if __name__ == "__main__":
     }
     if args.fwhm:
         transform = 'fwhm'
-        fnames['Qtuple'] = f'qsmp_m{sublen}_snr{snr_str}_fwhm.npz'
+        fnames['Qtuple'] = f'qsmp_m{sublen}_sigma{sigma_str}_fwhm.npz'
     elif args.whiten:
         transform = 'whiten'
         fnames['whitened time series'] = 'qsmp_T_splice_whitened.npz'
-        fnames['Qtuple'] = f'qsmp_m{sublen}_snr{snr_str}_whiten.npz'
+        fnames['Qtuple'] = f'qsmp_m{sublen}_sigma{sigma_str}_whiten.npz'
     else:
         transform = None
-        fnames['Qtuple'] = f'qsmp_m{sublen}_snr{snr_str}.npz'
+        fnames['Qtuple'] = f'qsmp_m{sublen}_sigma{sigma_str}.npz'
 
 
     get_data = True
@@ -99,11 +94,12 @@ if __name__ == "__main__":
             raise ValueError(
                 f"The path '{dpath}' doesn't contain neither 'preictal' nor 'interictal'")
         W = W[:, i_csp]
-        T, splice = utils.cat_segments(dpath, W, train_len=train_len)        
+        T, splice, t_start, t_end, seiz_id = utils.cat_segments(
+            dpath, W, train_len=train_len)
         fpath = os.path.join(dpath, fnames['time series'])
         with open(fpath, 'wb') as f:
-            np.savez(f, T=T, splice=splice)
-    
+            np.savez(f, T=T, splice=splice, t_start=t_start,
+                     t_end=t_end, seiz_id=seiz_id)    
     
     compute_density = True    
     fpath = os.path.join(dpath, fnames['Qtuple'])
@@ -119,7 +115,7 @@ if __name__ == "__main__":
     # Compute and save density
     if compute_density:
         T, splice, density = gpu_density(
-            T, sublen, bw, dpath, transform=transform, 
+            T, sublen, sigma, dpath, transform=transform, 
             splice=splice, device_id=device_ids)        
         fpath = os.path.join(dpath, fnames['Qtuple'])
         with open(fpath, 'wb') as f:

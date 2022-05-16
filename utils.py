@@ -5,10 +5,33 @@ import h5py
 import numpy as np
 import scipy.signal as signal
 import pickle
+import numbers
 
 # Pattern for path to file rx < id > .mat
 FILE_ID_PAT = '.*/rx(?P<id>\d+).mat$'
 RX_GLOB = 'rx*.mat'
+
+
+def check_rng(seed):
+    """Turn seed into a np.random.Generator instance
+
+    Parameters
+    ----------
+    seed : None, int or instance of Generator
+        If seed is None, return the Generator using the OS entropy.
+        If seed is an int, return a new Generator instance seeded with seed.
+        If seed is already a Generator instance, return it.
+        Otherwise raise ValueError.
+    """
+    if seed is None:
+        return np.random.default_rng()
+    if isinstance(seed, numbers.Integral):
+        seed = np.random.SeedSequence(seed)
+        return np.random.default_rng(seed)
+    if isinstance(seed, np.random.SeedSequence):
+        return np.random.default_rng(seed)
+    if isinstance(seed, np.random.Generator):
+        return seed
 
 def loadmat73(fpath, varname):
     """ Load data from a -v7.3 Matlab file."""
@@ -106,9 +129,18 @@ def cat_segments(dpath, W, train_len=None):
 
     seglen = []
     ts = []
+    seiz_id = []
+    t_start, t_end = [], []
     pnts = 0
     for i_file in np.arange(n_files):
         epoch = loadmat73(files[i_file], 'epoch')
+        try:
+            szid = loadmat73(files[i_file], 'seiz_id')
+            seiz_id.append(szid)
+        except KeyError:
+            pass
+        t_start.append(loadmat73(files[i_file], 't_start'))
+        t_end.append(loadmat73(files[i_file], 't_end'))        
         x = np.matmul(W.T, epoch)  # spatial filtering
         ts.append(x)
         xlen = x.size
@@ -125,8 +157,9 @@ def cat_segments(dpath, W, train_len=None):
     seglen = np.array(seglen)
     cumlen = np.cumsum(seglen)
     splice = cumlen[:-1]  # start index for second to last segment
+    t_start, t_end = np.array(t_start).squeeze(), np.array(t_end).squeeze()
 
-    return ts, splice
+    return ts, splice, t_start, t_end, seiz_id
 
 def fix_root(qsmp):
     profile, neighbor, density = qsmp
@@ -231,6 +264,7 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
     `direction` indicates the direction of the correction (shift). 'backward' 
     is to convert an index in the filtered time series to its equivalent in the 
     unfiltered time series.
+    ind might contain NaN values, and that is OK, np.searchsorted() returns the end_seg.size in those cases, and NaN + number is NaN.
     """
 
     if direction == 'forward':

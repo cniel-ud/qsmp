@@ -161,6 +161,41 @@ def cat_segments(dpath, W, train_len=None):
 
     return ts, splice, t_start, t_end, seiz_id
 
+
+def splitdata(X, chunk_size, keep_dims=True):
+    """
+    Split a data into smaller non-overlapping chunks
+
+    Parameters
+    ----------
+    X (array):
+        A 2D array. The rows are observations (data points). X.shape = (m,n)
+    chunk_size (int):
+        Each observation is split into chunks of size chunk_size. It is assumed that n = k*chunk_size, with k an integer.
+    keep_dims (bool):
+        It controls the number of dimensions of the returned matrix. See below.
+
+    Returns
+    -------
+    X (array):
+        If keep_dims == True, X.shape = (k*m, chunk_size): the chunks of each observation are stacked vertically as rows of the output matrix. If keep_dims == False, X.shape = (m, k, chunk_size): the chunks are stacked along the second dimension and extend along the third dimension of the output matrix.
+    """
+
+    if X.ndim == 1:
+        X.shape = (1, -1)
+
+    ind1 = np.arange(X.shape[0]).reshape(-1, 1, 1)
+    offset = np.arange(0, X.shape[1], chunk_size).reshape(1, -1, 1)
+    chunk_ind = np.arange(chunk_size).reshape(1, 1, -1)
+    ind2 = offset + chunk_ind
+    X = X[ind1, ind2]
+
+    if keep_dims:
+        return X.reshape(-1, chunk_size)
+    else:
+        return X
+
+
 def fix_root(qsmp):
     profile, neighbor, density = qsmp
     n_bw = profile.shape[1]
@@ -201,18 +236,7 @@ def get_waves(start_index, time_series, wave_lenght):
 
     return waves
 
-def fwhm(x):
-    n = x.shape[0]
-    fwhm = np.zeros(n, dtype=np.int64)
-    for i in range(n):
-        imax = np.argmax(x[i])
-        ind = np.asarray(x[i] < x[i][imax]/2).nonzero()[0]
-        isort = np.argsort(np.abs(ind - imax))
-        ind = ind[isort[:2]]
-        fwhm[i] = ind[1] - ind[0]
-    return fwhm
 
-def ndxcorr(x):
     n, m = x.shape
     xcorr = np.zeros((n, 2*m-1))
     for i in range(n):

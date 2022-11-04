@@ -35,7 +35,6 @@ def _compute_and_update_density_kernel(
     QT_even,
     QT_odd,
     QT_first,
-    profile,
     M_T,
     Σ_T,
     centeredness,
@@ -152,6 +151,7 @@ def _compute_and_update_density_kernel(
         for ic in range(n_sigma):
             P = math.exp(-0.5*D/sigma[ic]**2)
             density[j, ic] = density[j, ic] + P
+
 
 
 def chkpt_write(dpath:Path, device_id, i, device_density, range_start, t_elapsed_hr):
@@ -281,7 +281,6 @@ def _gpu_density(
     Σ_T = np.load(Σ_T_fname, allow_pickle=False)
     centeredness = np.load(centeredness_fname, allow_pickle=False)
     fwhm = np.load(fwhm_fname, allow_pickle=False)
-    profile = np.zeros(k)
 
     n_sigma = sigma.size
 
@@ -299,7 +298,6 @@ def _gpu_density(
         device_fwhm = cuda.to_device(fwhm)
         device_splice = cuda.to_device(splice)
         device_sigma = cuda.to_device(sigma)
-        device_profile = cuda.to_device(profile)
 
         device_density = cuda.to_device(density)
         _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
@@ -311,7 +309,6 @@ def _gpu_density(
             device_QT_even,
             device_QT_odd,
             device_QT_first,
-            device_profile,
             device_M_T,
             device_Σ_T,
             device_centeredness,
@@ -336,7 +333,6 @@ def _gpu_density(
                 device_QT_even,
                 device_QT_odd,
                 device_QT_first,
-                device_profile,
                 device_M_T,
                 device_Σ_T,
                 device_centeredness,

@@ -1,3 +1,4 @@
+from bottleneck import move_argmin as _move_argmin
 import os
 import re
 import glob
@@ -293,3 +294,19 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
     ind = ind + i_seg*grp_delay
 
     return ind
+
+
+def move_argmin(x, win_size):
+    last_samples = np.arange(-(win_size//2 + 1), 0) # XXX: -1?
+    # Having infs in the last samples is a problem, as there is nothing smaller 
+    # that inf :(, and move_argmin picks the rightmost index in case of a tie.
+    is_inf = np.isinf(x[last_samples])
+    if is_inf.any():  #XXX: Better to use NaNs?
+        x[last_samples][is_inf] = 0.0
+    x = np.r_[np.full(win_size//2, np.inf), x, np.full(win_size//2-1, np.inf)]
+    idx = _move_argmin(x, win_size, min_count=1)
+
+    # map indices so that x[idx] is the output of a rolling min
+    idx = idx[win_size-1:]
+    idx = -idx + win_size//2 - 1 + np.arange(idx.size)
+    return idx.astype(int)

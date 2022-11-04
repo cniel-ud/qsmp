@@ -20,8 +20,9 @@ parser = ArgumentParser()
 parser.add_argument("--root", help="Path to root folder")
 parser.add_argument("--subseq-len", type=int,
                     help="Subsequence (query) length")
-parser.add_argument("--sigma", type=float, dest="sigma", default=[5],
+parser.add_argument("--sigma", type=float, default=[5],
                     nargs='*', help="Kernel width")
+parser.add_argument("--minfilt-size", type=int, help="Length of min-filter")
 parser.add_argument('--window-support', type=float, default=0.5,
                     help='Fraction of Gaussian window with ±3*sigma')
 parser.add_argument('--window-type', default=None)
@@ -31,6 +32,7 @@ args = parser.parse_args()
 
 root = Path(args.root)
 sublen = args.subseq_len
+minfilt_size = args.minfilt_size
 sigma = args.sigma
 win_support = args.window_support
 transform = args.transform
@@ -69,8 +71,10 @@ if transform is not None:
     tr_str = f'_{transform}'
 else:
     tr_str = ''
-fnames['Qtuple'] = f'qsmp_m{sublen}_sigma{sigma_str}{win_str}{tr_str}.npz'
-
+fnames['Qtuple'] = (
+    f'qsmp_m{sublen}_sigma{sigma_str}{win_str}'
+    f'{tr_str}minfilt-{minfilt_size}.npz'
+)
 
 fpath = data_dir.joinpath(fnames['time series'])
 T = np.loadtxt(fpath)
@@ -78,7 +82,7 @@ T = np.loadtxt(fpath)
 compute_density = True
 fpath = results_dir.joinpath(fnames['Qtuple'])
 if fpath.is_file():
-    with np.load(fpath) as data:        
+    with np.load(fpath) as data:
         if 'density' in data:
             density = data['density']
             T = data['T']
@@ -92,14 +96,17 @@ if fpath.is_file():
 if compute_density:
     T, splice, density = gpu_density(
         T, sublen, sigma, root, transform=transform,
-        splice=None, window=win, device_id=device_ids)
+        splice=None, window=win, device_id=device_ids
+    )
     fpath = results_dir.joinpath(fnames['Qtuple'])
     with fpath.open('wb') as f:
         np.savez(f, density=density, T=T, splice=splice)
 
 # Compute QSMP and indices
-profile, indices = gpu_qsmp(T, sublen, density, root, transform=transform,
-                            splice=splice, device_id=device_ids)
+profile, indices = gpu_qsmp(
+    T, sublen, minfilt_size, density, root,
+    transform=transform, splice=splice, device_id=device_ids
+)
 
 # Find global maxima (root), and fix neighbor and profile
 profile, indices, density = utils.fix_root((profile, indices, density))
@@ -109,7 +116,7 @@ profile, indices, density = utils.fix_root((profile, indices, density))
 fpath = results_dir.joinpath(fnames['Qtuple'])
 with fpath.open('wb') as f:
     np.savez(
-        f, density=density, profile=profile, indices=indices, 
+        f, density=density, profile=profile, indices=indices,
         T=T, splice=splice
     )
 

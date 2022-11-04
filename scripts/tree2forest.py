@@ -21,6 +21,7 @@ parser.add_argument('--n-neighbors', type=int, default=9,
                     help='Number of neighbors for each mode to plot/save')
 parser.add_argument('--window-support', type=float, default=0.5,
                     help='Fraction of Gaussian window with ±3*sigma')
+parser.add_argument("--minfilt-size", type=int, help="Length of min-filter")
 parser.add_argument('--window-type', default=None)
 parser.add_argument('--transform', default=None)
 
@@ -34,6 +35,7 @@ results_dir = root.joinpath('results', args.experiment)
 
 max_modes, k = args.max_modes, args.n_neighbors
 sublen = args.subseq_len
+minfilt_size = args.minfilt_size
 sigma_str = [str(i) for i in args.sigma]
 sigma_str = '_'.join(sigma_str)
 
@@ -49,9 +51,14 @@ else:
     tr_str = ''
 
 # fnames['Qtuple'] = f'qsmp_m{sublen}_sigma{sigma_str}{win_str}{tr_str}.npz'
-in_fname = f'qsmp_m{sublen}_sigma{sigma_str}{win_str}{tr_str}.npz'
-out_fname = f'{max_modes}modes_{k}neighbors{win_str}{tr_str}.pdf'
-
+in_fname = (
+    f'qsmp_m{sublen}_sigma{sigma_str}{win_str}'
+    f'{tr_str}minfilt-{minfilt_size}.npz'
+)
+out_fname = (
+    f'{max_modes}modes_{k}neighbors{win_str}'
+    f'{tr_str}minfilt-{minfilt_size}.pdf'
+)
 
 fpath = results_dir.joinpath(in_fname)
 with np.load(fpath) as data:

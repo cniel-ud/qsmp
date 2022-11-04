@@ -12,34 +12,31 @@ import math
 import multiprocessing as mp
 import os
 from pathlib import Path
-from xml.dom.expatbuilder import DOCUMENT_NODE
 
 import numpy as np
 from numba import cuda
 
 from qsmp import core, config
 from time import perf_counter
+from qsmp.utils import utils
 
 from ipdb import set_trace
 
 logger = logging.getLogger(__name__)
 
 @cuda.jit
-def _compute_and_update_QI_kernel(
+def _compute_and_update_dist_kernel(
     i,
     T,
     m,
-    density,
     QT_even,
     QT_odd,
     QT_first,
     M_T,
     Σ_T,
-    fwhm,
     k,
     excl_zone,
-    profile,
-    indices,
+    dist_vec,
     compute_QT,
     ):
     """
@@ -53,8 +50,6 @@ def _compute_and_update_QI_kernel(
         The time series or sequence for which to compute the dot product
     m : int
         Window size
-    density : ndarray
-        Density of subsequences of length m in T
     QT_even : ndarray
         The input QT array (dot product between the query sequence,`Q`, and
         time series, `T`) to use when `i` is even
@@ -67,21 +62,13 @@ def _compute_and_update_QI_kernel(
         Sliding mean of time series, `T`
     Σ_T : ndarray
         Sliding standard deviation of time series, `T`
-    fwhm : numpy.ndarray
-        FWHM of the autocorrelation function of each subsequence
     k : int
         The total number of sliding windows to iterate over
     excl_zone : int
         The half width for the exclusion zone relative to the current
         sliding window
-    profile : ndarray
-        Matrix profile. The first column consists of the global matrix profile,
-        the second column consists of the left matrix profile, and the third
-        column consists of the right matrix profile.
-    indices : ndarray
-        The first column consists of the matrix profile indices, the second
-        column consists of the left matrix profile indices, and the third
-        column consists of the right matrix profile indices.
+    dist_vec : ndarray
+        D[i,:], where D[i,j] is the distance between subsequences x_i and x_j
     compute_QT : bool
         A boolean flag for whether or not to compute QT
 
@@ -99,7 +86,7 @@ def _compute_and_update_QI_kernel(
         QT_out = QT_odd
         QT_in = QT_even
 
-    for j in range(start, QT_out.shape[0], stride):        
+    for j in range(start, QT_out.shape[0], stride):
         zone_start = max(0, j - excl_zone)
         zone_stop = min(k, j + excl_zone)
 
@@ -139,17 +126,10 @@ def _compute_and_update_QI_kernel(
         if (i <= zone_stop and i >= zone_start):
             D = np.inf
 
-        n_density = density.shape[1]        
-        for ic in range(n_density):
-            # Ignore neighbors that don't increase density
-            # This includes the ones that are at the splice
-            if density[i, ic] > density[j, ic]:
-                if D < profile[j, ic]:
-                    profile[j, ic] = D
-                    indices[j, ic] = i
+        dist_vec[j] = D
 
 
-def chkpt_write(dpath:Path, device_id, i, device_profile, device_indices,
+def chkpt_write(dpath:Path, device_id, i, profile, indices,
                 range_start, t_elapsed_hr):
     """ Save distance and index profile to checkpointing file
 
@@ -157,9 +137,6 @@ def chkpt_write(dpath:Path, device_id, i, device_profile, device_indices,
     """
     fname = f'device{device_id}_checkpoint.npz'
     fpath = dpath.joinpath(fname)
-
-    profile = device_profile.copy_to_host()
-    indices = device_indices.copy_to_host()
 
     with fpath.open('wb') as f:
         np.savez(f, range_start=i, profile=profile, indices=indices)
@@ -194,16 +171,34 @@ def chkpt_clean(dpath:Path, device_id):
     if fpath.is_file():
         os.remove(fpath)
 
+def _update_profile_and_indices(i, device_dist_vec, minfilt_size,
+        density, profile, indices):
+    """
+    NOTE: minfilt_size has to be even...for now...
+    """
+    n_sigmas = density.shape[1]
+    dist_vec = device_dist_vec.copy_to_host()
+    dist_si_idx = utils.move_argmin(dist_vec, minfilt_size)
+    dist_si = dist_vec[dist_si_idx]
+    for sigma_idx in range(n_sigmas):
+        higher_density = (
+            density[:, sigma_idx] > density[i, sigma_idx]).nonzero()[0]
+        if higher_density.size > 0:
+            j_min = np.argmin(dist_si[higher_density])
+            j_min = higher_density[j_min]
+            profile[i, sigma_idx] = dist_si[j_min]
+            indices[i, sigma_idx] = dist_si_idx[j_min]
+
 def _gpu_qsmp(
     T_fname,
     m,
+    minfilt_size,
     density,
     splice,
     range_stop,
     excl_zone,
     M_T_fname,
     Σ_T_fname,
-    fwhm_fname,
     QT_fname,
     QT_first_fname,
     k,
@@ -222,6 +217,9 @@ def _gpu_qsmp(
         the matrix profile
     m : int
         Window size
+    minfilt_size: int
+        Lenght of min filter. This filter is used to compute a shift-invariant
+        distance vector from the distance profile of each subsequence.
     density : ndarray
         Density of subsequences of length m in T. density.shape(n, k), with `k`
         being the number of density estimates. A different tuple of distances
@@ -243,8 +241,6 @@ def _gpu_qsmp(
         The file name for the sliding mean of time series, `T`
     Σ_T_fname : str
         The file name for the sliding standard deviation of time series, `T`
-    fwhm_fname : str
-        The file name for the FWHM of the autocorrelation of the subsequences
     QT_fname : str
         The file name for the dot product between some query sequence,`Q`, and time series, `T`
     QT_first_fname : str
@@ -276,21 +272,20 @@ def _gpu_qsmp(
     QT_first = np.load(QT_first_fname, allow_pickle=False)
     M_T = np.load(M_T_fname, allow_pickle=False)
     Σ_T = np.load(Σ_T_fname, allow_pickle=False)
-    fwhm = np.load(fwhm_fname, allow_pickle=False)
 
     with cuda.gpus[device_id]:
 
-        print('===> Before chkpt_read:', flush=True)
-        print(f'k={k}')
-        print(f'density.shape={density.shape}', flush=True)
+        #XXX: This function needs to be refactored:
+        n_sigmas = density.shape[1]
         range_start, profile, indices = chkpt_read(\
-            dpath, device_id, range_start, k, density.shape[1])
+            dpath, device_id, range_start, k, n_sigmas)
+        dist_vec = np.full(k, np.inf)  # float64
         print('===> After chkpt_read:', flush=True)
         print(f'k={k}')
         print(f'profile.shape={profile.shape}', flush=True)
         print(f'density.shape={density.shape}', flush=True)
 
-        n_sigmas = density.shape[1]
+
         for i in splice:
             profile[i-m+1:i, :] = 0
             splice_ind = np.arange(i-m+1, i)[:, None]
@@ -302,61 +297,68 @@ def _gpu_qsmp(
         device_QT_first = cuda.to_device(QT_first)
         device_M_T = cuda.to_device(M_T)
         device_Σ_T = cuda.to_device(Σ_T)
-        device_fwhm = cuda.to_device(fwhm)
-        device_density = cuda.to_device(density)
-        device_profile = cuda.to_device(profile)
-        device_indices = cuda.to_device(indices)
-        _compute_and_update_QI_kernel[blocks_per_grid, threads_per_block](
+        device_dist_vec = cuda.to_device(dist_vec)
+
+        _compute_and_update_dist_kernel[blocks_per_grid, threads_per_block](
             range_start - 1,
             device_T,
             m,
-            device_density,
             device_QT_even,
             device_QT_odd,
             device_QT_first,
             device_M_T,
             device_Σ_T,
-            device_fwhm,
             k,
             excl_zone,
-            device_profile,
-            device_indices,
+            device_dist_vec,
             False,
+        )
+        # XXX: range_start-1=0 for 1 GPU, can we still do multiple GPUs here?
+        _update_profile_and_indices(
+            range_start-1, device_dist_vec, minfilt_size,
+            density, profile, indices
         )
 
         t_elapsed_hr = 0
         tot_elapsed_hr = 0
         for i in range(range_start, range_stop):
             t_start = perf_counter()
-            _compute_and_update_QI_kernel[blocks_per_grid, threads_per_block](
+            _compute_and_update_dist_kernel[blocks_per_grid, threads_per_block](
                 i,
                 device_T,
                 m,
-                device_density,
                 device_QT_even,
                 device_QT_odd,
                 device_QT_first,
                 device_M_T,
                 device_Σ_T,
-                device_fwhm,
                 k,
                 excl_zone,
-                device_profile,
-                device_indices,
+                device_dist_vec,
                 True,
             )
             t_stop = perf_counter()
-            t_elapsed_hr += (t_stop - t_start)/3600
-            if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
-                tot_elapsed_hr += t_elapsed_hr
-                t_elapsed_hr = 0
-                chkpt_write(dpath, device_id, i, device_profile,
-                            device_indices, range_start, tot_elapsed_hr)
+            t_elapsed = t_stop - t_start
+            print(f'====> i={i}, time in kernel: {t_elapsed} seconds')
+            t_start = perf_counter()
+            _update_profile_and_indices(
+                i, device_dist_vec, minfilt_size,
+                density, profile, indices
+            )
 
-        chkpt_clean(dpath, device_id)
+            t_stop = perf_counter()
+            t_elapsed = t_stop - t_start
+            print(
+                f'====> i={i}, time updating NNdist and NNindex: {t_elapsed} seconds')
+            # t_elapsed_hr += (t_stop - t_start)/3600
+            # if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
+            #     tot_elapsed_hr += t_elapsed_hr
+            #     t_elapsed_hr = 0
+            #     chkpt_write(dpath, device_id, i, profile,
+            #                 indices, range_start, tot_elapsed_hr)
 
-        profile = device_profile.copy_to_host()
-        indices = device_indices.copy_to_host()
+        # chkpt_clean(dpath, device_id)
+
         profile = np.sqrt(profile)
 
         profile_fname = core.array_to_temp_file(profile)
@@ -365,7 +367,9 @@ def _gpu_qsmp(
     return profile_fname, indices_fname
 
 
-def gpu_qsmp(T, m, density, dpath, transform=None, splice=None, device_id=0):
+def gpu_qsmp(
+    T, m, minfilt_size, density, dpath,
+    transform=None, splice=None, device_id=0):
     """
     Compute the z-normalized Quick Shift Matrix Profile with one or more
     GPU devices.
@@ -379,6 +383,9 @@ def gpu_qsmp(T, m, density, dpath, transform=None, splice=None, device_id=0):
         The time series or sequence for which to compute the QSMP
     m : int
         Window size
+    minfilt_size: int
+        Lenght of min filter. This filter is used to compute a shift-invariant
+        distance vector from the distance profile of each subsequence.
     density : ndarray
         Density of subsequences of length m in T
     dpath: string
@@ -423,12 +430,6 @@ def gpu_qsmp(T, m, density, dpath, transform=None, splice=None, device_id=0):
 
     T, M_T, Σ_T = core.preprocess(T, m)
 
-    if transform == 'fwhm':
-        fwhm = core.fwhm(core.ndxcorr(T, m, splice))
-        fwhm = core.fill_fwhm(fwhm, splice, m)
-    else:
-        fwhm = np.full(0, 0)
-
     if T.ndim != 1:  # pragma: no cover
         raise ValueError(
             f"T is {T.ndim}-dimensional and must be 1-dimensional. "
@@ -444,7 +445,6 @@ def gpu_qsmp(T, m, density, dpath, transform=None, splice=None, device_id=0):
     T_fname = core.array_to_temp_file(T)
     M_T_fname = core.array_to_temp_file(M_T)
     Σ_T_fname = core.array_to_temp_file(Σ_T)
-    fwhm_fname = core.array_to_temp_file(fwhm)
 
     if isinstance(device_id, int):
         device_ids = [device_id]
@@ -488,13 +488,13 @@ def gpu_qsmp(T, m, density, dpath, transform=None, splice=None, device_id=0):
                 (
                     T_fname,
                     m,
+                    minfilt_size,
                     density,
                     splice,
                     stop,
                     excl_zone,
                     M_T_fname,
                     Σ_T_fname,
-                    fwhm_fname,
                     QT_fname,
                     QT_first_fname,
                     k,
@@ -509,13 +509,13 @@ def gpu_qsmp(T, m, density, dpath, transform=None, splice=None, device_id=0):
             profile[idx], indices[idx] = _gpu_qsmp(
                 T_fname,
                 m,
+                minfilt_size,
                 density,
                 splice,
                 stop,
                 excl_zone,
                 M_T_fname,
                 Σ_T_fname,
-                fwhm_fname,
                 QT_fname,
                 QT_first_fname,
                 k,

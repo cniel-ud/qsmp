@@ -10,7 +10,6 @@ import qsmp.utils.utils as utils
 from qsmp.utils import windows
 
 from time import perf_counter
-from ipdb import set_trace
 
 
 t_start = perf_counter()
@@ -24,7 +23,7 @@ parser.add_argument("--sigma", type=float, default=[5],
                     nargs='*', help="Kernel width")
 parser.add_argument("--minfilt-size", type=int, help="Length of min-filter")
 parser.add_argument('--window-support', type=float, default=0.5,
-                    help='Fraction of Gaussian window with ±3*sigma')
+                    help='Fraction of Gaussian window with 3*sigma')
 parser.add_argument('--window-type', default=None)
 parser.add_argument('--transform', default=None)
 

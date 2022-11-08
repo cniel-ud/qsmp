@@ -1,6 +1,0 @@
-numpy
-
-[doc]
-numpydoc
-sphinx
-gitpython

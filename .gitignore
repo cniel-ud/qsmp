@@ -5,3 +5,4 @@ private/
 qsmp.egg-info/
 results/
 !.pre-commit-config.yaml
+*.nvvp*

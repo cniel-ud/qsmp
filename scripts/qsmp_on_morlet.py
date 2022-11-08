@@ -41,6 +41,7 @@ results_dir = root.joinpath('results/morlet')
 results_dir.mkdir(exist_ok=True)
 
 device_ids = [device.id for device in numba.cuda.list_devices()]
+device_ids = [device_ids[0]]  # Use only one GPU
 
 # The Gaussian kernel is of the form
 #   f(x) = exp(-x^2/(2*sigma^2))

@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import copy
-import utils
 # %%
 DPATH = "/home/cmendoza/Research/QSMP/data/Study019/preictal"
 fname = 'qsmp_m350_snr0.0_2.0_4.0_8.0_10.0.npz'
@@ -28,7 +27,7 @@ iinf = np.asarray(is_mode).nonzero()[0]
 #%% Ignore subsequences at splice
 full_profile[inan, ibw] = np.inf
 # %%
-# If QSMP == inf, we hit a mode: the point doesn't move, its nearest neighbor 
+# If QSMP == inf, we hit a mode: the point doesn't move, its nearest neighbor
 # is itself.
 imax = np.argmax(full_density[:, ibw])
 assert imax in iinf
@@ -76,7 +75,7 @@ bins = np.r_[0, bins, n_subseq]
 nbins = bins.size - 1
 #%% Pick subsequences with max-density neighbor
 idx = np.zeros(nbins, dtype=np.int64)
-for i in range(nbins):    
+for i in range(nbins):
     aux_neigh = neighbor[bins[i]:bins[i+1]]
     imax = np.argmax(density[aux_neigh])
     idx[i] = bins[i] + imax
@@ -96,7 +95,7 @@ density = density[isort]
 #%% Put the results in a data frame for easy visualization
 data = {
     'Subsequence': subseq,
-    'Neighbor': neighbor,    
+    'Neighbor': neighbor,
     'profile': profile,
     'density': density,
 }
@@ -104,9 +103,9 @@ df = pd.DataFrame(data=data)
 fname = 'preictal_Study019_pairings.csv'
 dpath = '/home/cmendoza/MEGA/Research/Third_Paper/proto/'
 fpath = os.path.join(dpath, fname)
-df.to_csv(fpath) 
+df.to_csv(fpath)
 
-#%% Second pass: for subsequences with nearest-neighbors withing ±m/2 of local 
+#%% Second pass: for subsequences with nearest-neighbors withing ±m/2 of local
 # maxima, move them to that local maxima.
 n_picked = subseq.size
 cnt = 0
@@ -130,7 +129,7 @@ imax = uniq_neigh[isort]
 
 fig, ax = plt.subplots(1, 3, figsize=(20, 4))
 str_max = ['first', 'second', 'third']
-for i in range(3):    
+for i in range(3):
     x = range(imax[i]-gap, imax[i]+gap)
     ax[i].plot(x, full_density[x, ibw])
     ax[i].set_title(f'{str_max[i]} maxima')
@@ -140,7 +139,7 @@ plt.suptitle(f'Density at SNR = 0 dB, {m}-points around local maxima. '
 #%% Put the results in a data frame for easy visualization
 data = {
     'Subsequence': subseq,
-    'Neighbor': neighbor,    
+    'Neighbor': neighbor,
     'profile': profile,
     'density': density,
 }

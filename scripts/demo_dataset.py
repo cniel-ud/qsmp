@@ -5,8 +5,6 @@ from numpy.random import default_rng
 import matplotlib.pyplot as plt
 import utils
 import tree
-import copy
-import core
 #%%
 IMG_DIR = "/home/cmendoza/MEGA/Research/Third_Paper/proto"
 snr = np.r_[0, 2, 4, 8, 10]
@@ -35,7 +33,7 @@ mu = np.array([
     [7, 7],
     [0, -7]]
 )
-cov = np.array([    
+cov = np.array([
     [[1, 0.1],
      [0.1, 1]],
     [[1, 0.1],
@@ -77,7 +75,7 @@ density = density.T
 profile = np.full((N,5), fill_value=np.inf)
 neighbor = np.full((N,5), fill_value=-1, dtype=np.int64)
 for i in range(N):
-    dist = sq_row_norms + sq_row_norms[i] - 2*X @ X[i]    
+    dist = sq_row_norms + sq_row_norms[i] - 2*X @ X[i]
     for ibw, bw in enumerate(bandwidths):
         inc_density = density[:, ibw] > density[i, ibw]
         inc_density = np.asarray(inc_density).nonzero()[0]
@@ -147,5 +145,5 @@ plt.tight_layout()
 fname = 'clustering_toy_dataset.pdf'
 fpath = os.path.join(IMG_DIR, fname)
 fig.savefig(fpath, bbox_inches='tight')
-            
+
 # %%

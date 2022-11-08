@@ -219,7 +219,7 @@ def get_pkg_name():  # pragma: no cover
 
 @njit
 def rolling_window(a, window, splice=None):
-    """    
+    """
     Use strides to generate rolling/sliding windows for a numpy array.
 
     Parameters
@@ -229,11 +229,11 @@ def rolling_window(a, window, splice=None):
     window : int
         Size of the rolling window
     splice: numpy.ndarray
-        Is `splice` is an array, `a` is the result of `n` concatenated 
-        segments. `splice` has the start index of second to last segments. In 
-        other words, the indices where the concatenation of segments takes 
-        place. The rolling windows are extracted for each segment separately 
-        and then vertically stacked.  XXX: `a` is assumed to be a 1D array. 
+        Is `splice` is an array, `a` is the result of `n` concatenated
+        segments. `splice` has the start index of second to last segments. In
+        other words, the indices where the concatenation of segments takes
+        place. The rolling windows are extracted for each segment separately
+        and then vertically stacked.  XXX: `a` is assumed to be a 1D array.
 
     Returns
     -------
@@ -873,7 +873,7 @@ def compute_mean_std(T, m):
 
 def compute_centered_std(T, window):
     """
-    Compute the sliding mean standard deviation for the array `T` after 
+    Compute the sliding mean standard deviation for the array `T` after
     applying a window to each subsequence.
 
     Parameters
@@ -905,7 +905,7 @@ def compute_centered_std(T, window):
             chunk_size = math.ceil((T.shape[-1] + 1) / num_chunks)
             if chunk_size < m:
                 chunk_size = m
-            
+
             std_chunks = []
             for chunk in range(num_chunks):
                 start = chunk * chunk_size
@@ -917,13 +917,13 @@ def compute_centered_std(T, window):
                 subseq = subseq * window
                 tmp_std = np.std(subseq, axis=T.ndim)
                 std_chunks.append(tmp_std)
-            
+
             Σ_centered_T = np.hstack(std_chunks)
             break
-        
+
         except MemoryError:  # pragma nocover
             num_chunks *= 2
-    
+
     if iteration < max_iter - 1:
         return Σ_centered_T
     else:  # pragma nocover
@@ -2006,14 +2006,14 @@ def fwhm(x):
     """
     Finds the FWHM of the global maximum of x[i], for all i.
 
-    This function is intended for a curve `x` that is symmetric around its 
-    global maxima (like the autocorrelation function). To compute the FWHM, we 
+    This function is intended for a curve `x` that is symmetric around its
+    global maxima (like the autocorrelation function). To compute the FWHM, we
     consider two cases:
-    1) The curve increases monotonically from 0 to its global maxima (covered 
+    1) The curve increases monotonically from 0 to its global maxima (covered
     in the 'else' clause). There is only one broad peak in `x`.
     2) The curve has one main peak centered around its global maxima, and some side-band ripples (other lower-amplitude local maxima on both sides). This is covered in the 'if' clause.
 
-    Normalize by max():    
+    Normalize by max():
     """
     n, m = x.shape
     fwhm = np.zeros(n)
@@ -2022,7 +2022,7 @@ def fwhm(x):
     # percentual units
     x = x - x.min(axis=1, keepdims=True)
     x = x / x.max(axis=1, keepdims=True)
-    
+
     for i in range(n):
         peaks, props = find_peaks(x[i], prominence=0.1, height=0.5)
         if peaks.size == 1:
@@ -2034,7 +2034,7 @@ def fwhm(x):
             right_half = (to_the_right <= half_val).nonzero()[0][0]
             right_half = right_half + peaks[0] + 1
             fwhm[i] = right_half - left_half
-        else:            
+        else:
             i_max = np.argmax(props['peak_heights'])
             to_the_left = x[i, peaks[i_max-1]:peaks[i_max]]
             left_min = np.min(to_the_left)
@@ -2045,7 +2045,7 @@ def fwhm(x):
             right_half = (to_the_right <= half_val).nonzero()[0][0]
             right_half = right_half + peaks[i_max] + 1
             fwhm[i] = right_half - left_half
-    
+
     fwhm = fwhm / np.max(fwhm)
 
     return fwhm
@@ -2054,9 +2054,9 @@ def fwhm(x):
 def fill_fwhm(fwhm, splice, m):
     """ Extend fwhm to fill the gaps created by the splice
 
-    `fwhm` is the output from `ndxcorr()`. Its length is smaller than what is 
-    expected in `gpu_density` and `gpu_qsmp` because the subsequences (windows) 
-    that contain the splice are ignored. Here we extend `fwhm` to get the rigth length, adding an arbitrary value for those subsequences. For each segment 
+    `fwhm` is the output from `ndxcorr()`. Its length is smaller than what is
+    expected in `gpu_density` and `gpu_qsmp` because the subsequences (windows)
+    that contain the splice are ignored. Here we extend `fwhm` to get the rigth length, adding an arbitrary value for those subsequences. For each segment
     in the time series, there are m-1 subsequences that are ignored, with `m`  being the length of a subsequence.
     """
     I = np.arange(fwhm.size)
@@ -2074,9 +2074,9 @@ def fill_fwhm(fwhm, splice, m):
 @njit(parallel=True, fastmath=True)
 def ndxcorr(T, m, splice=None):
     """
-    np.correlate() in Numba only allows for the first two arguments, using the 
-    'valid' mode by default. So, we need to do the zero padding of each window 
-    in T to get its autocorrelation function. floor(m/2) zeros are padded to left and the remaining zeros (to sum m) are padded to the right. This is done to have the max peak of the autocorrelation at the center of the sequence. Assumes that T has only one dimension. If `splice` is an array, `T` is the result of concatenating `n_seg` segments, and `splice` contains the indices where the concatenation occurs: the start indices of the second to the last segment; in this case, it computes the autocorrelation only for windows that don't fall at the splice. 
+    np.correlate() in Numba only allows for the first two arguments, using the
+    'valid' mode by default. So, we need to do the zero padding of each window
+    in T to get its autocorrelation function. floor(m/2) zeros are padded to left and the remaining zeros (to sum m) are padded to the right. This is done to have the max peak of the autocorrelation at the center of the sequence. Assumes that T has only one dimension. If `splice` is an array, `T` is the result of concatenating `n_seg` segments, and `splice` contains the indices where the concatenation occurs: the start indices of the second to the last segment; in this case, it computes the autocorrelation only for windows that don't fall at the splice.
     """
     X = rolling_window(T, m, splice)
     n, m = X.shape
@@ -2091,8 +2091,8 @@ def ndxcorr(T, m, splice=None):
 
 
 def mean_PSD(T, splice, NFFT=2048, fs=512):
-    
-    end_seg = np.r_[splice, T.size]  # start index of each segment    
+
+    end_seg = np.r_[splice, T.size]  # start index of each segment
     seglen = np.diff(np.r_[0, end_seg])
     n_chunks_arr = np.floor(seglen/NFFT).astype(int)
     tot_n_chunks = np.sum(n_chunks_arr)
@@ -2109,7 +2109,7 @@ def mean_PSD(T, splice, NFFT=2048, fs=512):
             Px[ichunk] = psd.psd
             ichunk += 1
             start = end
-    
+
     f = psd.frequencies()
     f = np.array(f)
     Px = np.mean(Px, axis=0)
@@ -2144,15 +2144,15 @@ def whitening_filter(f, Px, n_taps=1001, fs=512, kernel_size=20):
     -----
     The desired gain is smoothed with a moving average filter before computing the coefficients of the FIR filter.
 
-    firls requires an even number of edges (the flattened `bands` argument must 
-    have an even number of elements). Since `f` and `Px` are assumed to have an 
-    odd length, we discard their last element (e.g., f[:-1] is passed to firls, 
+    firls requires an even number of edges (the flattened `bands` argument must
+    have an even number of elements). Since `f` and `Px` are assumed to have an
+    odd length, we discard their last element (e.g., f[:-1] is passed to firls,
     instead of f)
 
-    XXX: We are not normalizing `desired_gain`, so it can be bigger than one. 
+    XXX: We are not normalizing `desired_gain`, so it can be bigger than one.
     Should we normalize??
     """
-    
+
     Px = 1/Px
     kernel = np.ones(kernel_size)/kernel_size
     Px = np.convolve(Px, kernel, mode='same')
@@ -2168,12 +2168,12 @@ def get_group_delay(coeffs, freq, fs=512):
     coeffs: numpy.ndarray(dtype=float64)
         Vector of coefficients of a linear-phase FIR filter
     freq: numpy.ndarray(dtype=float64)
-        Vector of frequencies, in Hz. Used to compute the `grp_delay`, the 
-        group delay. The group delay is expected to be constant across all the 
+        Vector of frequencies, in Hz. Used to compute the `grp_delay`, the
+        group delay. The group delay is expected to be constant across all the
         range of frequencies of interest.
     fs: int
         Sampling frequency
-    
+
     Returns
     -------
     grp_delay: int
@@ -2194,24 +2194,24 @@ def whiten(T, splice, coeffs, grp_delay):
     T: numpy.ndarray(dtype=float64)
         Time series. T.shape=(l,).
     splice: numpy.ndarray(dtype=int64)
-        splice[i] has the start index of the (i+1)th-segment (e.g., 2nd segment 
+        splice[i] has the start index of the (i+1)th-segment (e.g., 2nd segment
         starts at splice[0], 3rd segment at splice[1], and so on), for i=0,..,
-        n-2, and n being the number of segments that were concatenated to form 
+        n-2, and n being the number of segments that were concatenated to form
         T.
     coeffs: numpy.ndarray(dtype=float64)
         Vector of coefficients of a linear-phase FIR filter
     grp_delay: int
         Group delay of filter with coefficients `coeffs`.
-    
+
     Returns
     -------
     filt_T: numpy.ndarray(dtype=float64)
         Filtered time series. If splice is not empty, filter each segment, discard first `grp_delay` samples, and concatenate back.
     new_splice: numpy.ndarray(dtype=int64)
-        Update splice indices, after discarding the first `grp_delay` samples 
+        Update splice indices, after discarding the first `grp_delay` samples
         on each filtered segment.
     """
-    
+
     n_seg = splice.size + 1
     end_seg = np.r_[splice, T.size]  # end index of each segment
     end_seg = end_seg
@@ -2229,7 +2229,7 @@ def whiten(T, splice, coeffs, grp_delay):
         x = lfilter(coeffs, 1, T[start:end], axis=0)
         dend = end - (i+1)*grp_delay
         filt_T[dstart:dend] = x[grp_delay:]
-        start = end        
+        start = end
         dstart = dend
 
     return filt_T, new_splice

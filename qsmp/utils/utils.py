@@ -1,10 +1,8 @@
-from bottleneck import move_argmin as _move_argmin
 import os
 import re
 import glob
 import h5py
 import numpy as np
-import scipy.signal as signal
 import pickle
 import numbers
 
@@ -141,7 +139,7 @@ def cat_segments(dpath, W, train_len=None):
         except KeyError:
             pass
         t_start.append(loadmat73(files[i_file], 't_start'))
-        t_end.append(loadmat73(files[i_file], 't_end'))        
+        t_end.append(loadmat73(files[i_file], 't_end'))
         x = np.matmul(W.T, epoch)  # spatial filtering
         ts.append(x)
         xlen = x.size
@@ -217,7 +215,7 @@ def get_waves(start_index, time_series, wave_lenght):
 
     start_index.shape=(k,)
     time_series.shape=(N,)
-    wave_lenght is an int    
+    wave_lenght is an int
     """
     if isinstance(start_index, np.ndarray):
         if issubclass(start_index.dtype.type, np.integer):
@@ -225,18 +223,18 @@ def get_waves(start_index, time_series, wave_lenght):
         else:
             raise TypeError(
                 f"Only arrays of integer dtypes are supported, but {(start_index).dtype.type} was passed.")
-            
+
     elif isinstance(start_index, (int, np.integer)):
         t = np.arange(start_index, start_index + wave_lenght)
     else:
         raise TypeError(
             f"Only int or numpy.ndarray are supported, but {type(start_index).__name__} was passed.")
-        
+
 
     waves = time_series[t]
 
     return waves
-    
+
 
 def load_modes(folder, maxdist, distfunc):
     fname = f'tree_maxdist{maxdist:.3g}_{distfunc}.pickle'
@@ -255,12 +253,12 @@ def where_equal(x, y):
         Reference 1D array. x.shape=(N,). `x` is assumed to be sorted in ascending order.
     y: numpy.array
         Query 1D array. y.shape=(m,). N<m. `y` is assumed to have unique (non-repeating) values.
-    
+
     Returns
     -------
     idx: numpy.array
         Indices of `x` where values of `x` are in `y`
-    
+
     Notes
     -----
     A naive for-loop implementation will be O(N*m). Since searchsorted uses binary search, I believe the cost here is O(log(N)*m)?
@@ -277,10 +275,10 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
 
     `ind` is a vector of NN-indices of time series subsequences
     `end_seg[i]` has the end index of the i-th segment in the time series.
-    `grp_delay` is the grp_delay caused by a linear-phase filter when applied 
+    `grp_delay` is the grp_delay caused by a linear-phase filter when applied
     to  the time series.
-    `direction` indicates the direction of the correction (shift). 'backward' 
-    is to convert an index in the filtered time series to its equivalent in the 
+    `direction` indicates the direction of the correction (shift). 'backward'
+    is to convert an index in the filtered time series to its equivalent in the
     unfiltered time series.
     ind might contain NaN values, and that is OK, np.searchsorted() returns the end_seg.size in those cases, and NaN + number is NaN.
     """
@@ -294,19 +292,3 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
     ind = ind + i_seg*grp_delay
 
     return ind
-
-
-def move_argmin(x, win_size):
-    last_samples = np.arange(-(win_size//2 + 1), 0) # XXX: -1?
-    # Having infs in the last samples is a problem, as there is nothing smaller 
-    # that inf :(, and move_argmin picks the rightmost index in case of a tie.
-    is_inf = np.isinf(x[last_samples])
-    if is_inf.any():  #XXX: Better to use NaNs?
-        x[last_samples][is_inf] = 0.0
-    x = np.r_[np.full(win_size//2, np.inf), x, np.full(win_size//2-1, np.inf)]
-    idx = _move_argmin(x, win_size, min_count=1)
-
-    # map indices so that x[idx] is the output of a rolling min
-    idx = idx[win_size-1:]
-    idx = -idx + win_size//2 - 1 + np.arange(idx.size)
-    return idx.astype(int)

@@ -128,21 +128,21 @@ for i, maxdist in enumerate(maxdists):
             with np.load(fpath) as data:
                 modes = data['modes']
                 new_neighbor = data['new_neighbor']
-            
+
             t = modes[:20, None] + np.arange(m)[None, :]
             waves = T[t]
             X[i][j].append(waves)
             labels[i][j].append(modes[:20])
             f_count[i][j].append(waves.shape[0])
             waves,_,_ = pltaux.wave_matrix(waves[:9])
-            ax[cnt_ax].plot(waves.T, color='#1f77b4')            
+            ax[cnt_ax].plot(waves.T, color='#1f77b4')
             if cnt_ax % 9 == 0:
                 ax[cnt_ax].set(frame_on=False, xticks=[], yticks = [])
                 ax[cnt_ax].set_ylabel(f'{maxdist:.3g}')
             else:
                 ax[cnt_ax].axis('off')
             ax[cnt_ax].set_title(f'{bw:.3g}, {f}')
-            cnt_ax += 1        
+            cnt_ax += 1
 fig.supylabel('maxdist')
 fig.supxlabel('bandwidth, path distance aggregation')
 plt.tight_layout()
@@ -180,8 +180,8 @@ fig.savefig(fpath, bbox_inches='tight')
 
 # %%
 XX = []
-for i, maxdist in enumerate(maxdists):    
-    for j, bw in enumerate(bandwidths[:3]):        
+for i, maxdist in enumerate(maxdists):
+    for j, bw in enumerate(bandwidths[:3]):
         XX.append(np.vstack(X[i][j]))
 
 XX = np.vstack(XX)
@@ -190,8 +190,8 @@ fig, ax = plt.subplots(5, 3, figsize=(10.5, 8))
 ax = ax.flatten()
 cnt_ax = 0
 start = 0
-for i, maxdist in enumerate(maxdists):    
-    for j, bw in enumerate(bandwidths[:3]):        
+for i, maxdist in enumerate(maxdists):
+    for j, bw in enumerate(bandwidths[:3]):
         for k, modecnt in enumerate(f_count[i][j]):
             stop = start + modecnt
             ax[cnt_ax].scatter(

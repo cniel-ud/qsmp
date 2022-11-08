@@ -19,7 +19,7 @@ def compute_PVE(X, X_hat, Fs, NFFT=1024):
 
 def get_all_components(X, D, z_hat):
     """
-    The i-th component is the convolution of z_hat[i] and D[i]. z_hat[i] is 
+    The i-th component is the convolution of z_hat[i] and D[i]. z_hat[i] is
     the sparse code vector and D[i] is the atom. We also return the full reconstruction, the result of using all the atoms.
     """
 

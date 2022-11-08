@@ -42,7 +42,7 @@ def compute_X_and_objective(X, z_hat, d_hat, reg, sample_weights=None,
 
 def learn_z(X,
             D,
-            reg=0.1,            
+            reg=0.1,
             n_iter=60,
             random_state=None,
             n_jobs=1,
@@ -127,7 +127,7 @@ def learn_z(X,
         b_hat_0 = rng.standard_normal(n_atoms * (n_times - n_times_atom + 1))
     else:
         b_hat_0 = None
-    
+
     z_hat = np.zeros((n_atoms, n_trials, n_times - n_times_atom + 1))
 
     pobj.append(compute_X_and_objective(X, z_hat, D, reg, sample_weights))
@@ -139,7 +139,7 @@ def learn_z(X,
                 print(msg, end='', flush=True)
             if verbose > 1:
                 print('Coordinate descent loop %d / %d [n_jobs=%d]' %
-                      (ii, n_iter, n_jobs))            
+                      (ii, n_iter, n_jobs))
 
             start = time.time()
             z_hat = update_z(X, D, reg, z0=z_hat, parallel=parallel,
@@ -160,7 +160,7 @@ def learn_z(X,
                 warnings.warn("Regularization parameter `reg` is too large "
                               "and all the activations are zero. No atoms has"
                               " been learned.", UserWarning)
-                break            
+                break
 
             if callable(callback):
                 callback(X, D, z_hat, reg)

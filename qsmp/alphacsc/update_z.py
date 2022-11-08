@@ -49,7 +49,7 @@ def update_z(X, ds, reg, z0=None, debug=False, parallel=None,
     if X.ndim == 1:
         X = X[None, :]  # 1 trial
 
-    n_trials, n_times = X.shape    
+    n_trials, n_times = X.shape
     n_atoms, n_times_atom = ds.shape
     n_times_valid = n_times - n_times_atom + 1
 

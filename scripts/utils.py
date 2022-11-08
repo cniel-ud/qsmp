@@ -8,10 +8,10 @@ def zscore(X):
     X = (X - mu) / sigma
     return X
 
-def mds(X, normalize=True):    
+def mds(X, normalize=True):
     if normalize:
         X = zscore(X)
-        
+
     row_norms = np.sum(X * X, axis=1)[None, :]
     D = row_norms.T + row_norms - 2*X @ X.T
 
@@ -33,7 +33,7 @@ def make_2D_modes(mu, cov, n_samples, n_dims, partition, std_noise, rng=None):
         rng = default_rng()
 
     k = partition.size - 1
-    
+
     n_samples_part = np.ceil(partition[1:] * n_samples).astype(int)
     tot_mode_samples = np.sum(n_samples_part)
     n_noise_samples = int(n_samples - tot_mode_samples)
@@ -51,5 +51,5 @@ def make_2D_modes(mu, cov, n_samples, n_dims, partition, std_noise, rng=None):
         start = stop
 
     X = np.vstack((noise, modes))
-    
+
     return X

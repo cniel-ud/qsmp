@@ -9,7 +9,7 @@ from time import perf_counter
 #%%
 @njit(parallel=True)
 def rolling_window(a, window, splice=None):
-    """    
+    """
     Use strides to generate rolling/sliding windows for a numpy array.
 
     Parameters
@@ -19,11 +19,11 @@ def rolling_window(a, window, splice=None):
     window : int
         Size of the rolling window
     splice: numpy.ndarray
-        Is `splice` is an array, `a` is the result of `n` concatenated 
-        segments. `splice` has the start index of second to last segments. In 
-        other words, the indices where the concatenation of segments takes 
-        place. The rolling windows are extracted for each segment separately 
-        and then vertically stacked.  XXX: `a` is assumed to be a 1D array. 
+        Is `splice` is an array, `a` is the result of `n` concatenated
+        segments. `splice` has the start index of second to last segments. In
+        other words, the indices where the concatenation of segments takes
+        place. The rolling windows are extracted for each segment separately
+        and then vertically stacked.  XXX: `a` is assumed to be a 1D array.
 
     Returns
     -------
@@ -56,19 +56,19 @@ def rolling_window(a, window, splice=None):
         shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
         strides = a.strides + (a.strides[-1],)
         out = np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
-    
+
     return out
 # %%
 @njit(parallel=True, fastmath=True)
 def ndxcorr(T, m, splice=None):
     """
-    np.correlate() in Numba only allows for the first two arguments, using the 
-    'valid' mode by default. So, we need to do the zero padding of each window 
-    in T to get its autocorrelation function. floor(m/2) zeros are padded to left and the remaining zeros (to sum m) are padded to the right. This is done to have the max peak of the autocorrelation at the center of the sequence. Assumes that T has only one dimension. If `splice` is an array, `T` is the result of concatenating `n_seg` segments, and `splice` contains the indices where the concatenation occurs: the start indices of the second to the last segment; in this case, it computes the autocorrelation only for windows that don't fall at the splice. 
+    np.correlate() in Numba only allows for the first two arguments, using the
+    'valid' mode by default. So, we need to do the zero padding of each window
+    in T to get its autocorrelation function. floor(m/2) zeros are padded to left and the remaining zeros (to sum m) are padded to the right. This is done to have the max peak of the autocorrelation at the center of the sequence. Assumes that T has only one dimension. If `splice` is an array, `T` is the result of concatenating `n_seg` segments, and `splice` contains the indices where the concatenation occurs: the start indices of the second to the last segment; in this case, it computes the autocorrelation only for windows that don't fall at the splice.
     """
-    X = rolling_window(T, m, splice)    
+    X = rolling_window(T, m, splice)
     n, m = X.shape
-    xcorr = np.zeros((n, m))    
+    xcorr = np.zeros((n, m))
     l = int(m/2)
     u = l + m
     for i in prange(n):
@@ -82,10 +82,10 @@ def fwhm(x):
     """
     Finds the FWHM of the global maximum of x[i], for all i.
 
-    This function is intended for a curve `x` that is symmetric around its 
-    global maxima (like the autocorrelation function). To compute the FWHM, we 
+    This function is intended for a curve `x` that is symmetric around its
+    global maxima (like the autocorrelation function). To compute the FWHM, we
     consider two cases:
-    1) The curve increases monotonically from 0 to its global maxima (covered 
+    1) The curve increases monotonically from 0 to its global maxima (covered
     in the 'else' clause). There is only one broad peak in `x`.
     2) The curve has one main peak centered around its global maxima, and some side-band ripples (other lower-amplitude local maxima on both sides). This is covered in the 'if' clause.
     """
@@ -100,7 +100,7 @@ def fwhm(x):
             right = imax + np.asarray(diff1[imax:] > 0).nonzero()[0][0]
         else:
             left = -1
-            right = m - 1            
+            right = m - 1
         idx = np.arange(left+1, right+1)
         half_range = (x[i][idx].max()-x[i][idx].min())/2 + x[i][idx].min()
         idx = idx[x[i][idx] < half_range]
@@ -112,9 +112,9 @@ def fwhm(x):
 def fill_fwhm(fwhm, splice, m):
     """ Extend fwhm to fill the gaps created by the splice
 
-    `fwhm` is the output from `ndxcorr()`. Its length is smaller than what is 
-    expected in `gpu_density` and `gpu_qsmp` because the subsequences (windows) 
-    that contain the splice are ignored. Here we extend `fwhm` to get the rigth length, adding an arbitrary value for those subsequences. For each segment 
+    `fwhm` is the output from `ndxcorr()`. Its length is smaller than what is
+    expected in `gpu_density` and `gpu_qsmp` because the subsequences (windows)
+    that contain the splice are ignored. Here we extend `fwhm` to get the rigth length, adding an arbitrary value for those subsequences. For each segment
     in the time series, there are m-1 subsequences that are ignored, with `m`  being the length of a subsequence.
     """
     I = np.arange(fwhm.size)
@@ -126,7 +126,7 @@ def fill_fwhm(fwhm, splice, m):
         idx = (I >= splice_ext[i]) & (I < splice_ext[i+1])
         ext_idx = I[idx] + (m-1)*i
         ext_fwhm[ext_idx] = fwhm[I[idx]]
-    
+
     return ext_fwhm
 #%%
 root = '/home/cmendoza/Research/QSMP/data/Study019/preictal'

@@ -68,7 +68,7 @@ seg_len = np.diff(np.r_[0, splice, T.size-1])
 n_seg = start_idx.size
 for i_reg in range(reg.size):
     t_start = perf_counter()
-    rng = default_rng(13)    
+    rng = default_rng(13)
     params = dict(
         reg=reg[i_reg],
         n_iter=1,
@@ -80,7 +80,7 @@ for i_reg in range(reg.size):
 
     for i_win in range(n_win):
         i_seg = rng.choice(n_seg, 1)[0]
-        
+
         if seg_len[i_seg] < args.winlen:
             i_start = start_idx[i_seg]
             i_stop = i_start + seg_len[i_seg]
@@ -91,9 +91,9 @@ for i_reg in range(reg.size):
 
         X = T[i_start:i_stop]
         X = X[None, :]  # 1 trial
-        pobj, times, z_hat = learn_z(X, D, **params)        
+        pobj, times, z_hat = learn_z(X, D, **params)
         l0norm[i_reg, i_win] = np.count_nonzero(z_hat)
-        X_hat = construct_X(z_hat, D)        
+        X_hat = construct_X(z_hat, D)
         _, _, pve[i_reg, i_win] = compute_PVE(X, X_hat, Fs, NFFT=NFFT)
     t_stop = perf_counter()
     print(

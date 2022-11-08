@@ -30,7 +30,7 @@ if __name__ == "__main__":
     parser.add_argument('--fwhm', action="store_true", default=False,
                         help="Scale distances by the FWHM of the autocorrelation of the subsequences")
     parser.add_argument('--whiten', action="store_true", default=False,
-                        help="Filter the time series with a whitening filter to de-emphasize low frequencies and emphasize high-frequencies")    
+                        help="Filter the time series with a whitening filter to de-emphasize low frequencies and emphasize high-frequencies")
 
     args = parser.parse_args()
 
@@ -46,13 +46,13 @@ if __name__ == "__main__":
     #   f(x) = exp(-x^2/(2*sigma^2))
     #   with `sigma` being the bandwidth parameter
     if not isinstance(sigma, list): snr = [sigma]
-    sigma = np.array(sigma)    
+    sigma = np.array(sigma)
 
     sigma_str = [str(i) for i in sigma]
     sigma_str = '_'.join(sigma_str)
 
-    #XXX: we are currently taking the first segments whose cumulative length 
-    # is >= args.train. This parameter is NOT currently reflected in the naming 
+    #XXX: we are currently taking the first segments whose cumulative length
+    # is >= args.train. This parameter is NOT currently reflected in the naming
     # of the output files.
     fnames = {
         'time series': 'qsmp_T_splice.npz'
@@ -99,24 +99,24 @@ if __name__ == "__main__":
         fpath = os.path.join(dpath, fnames['time series'])
         with open(fpath, 'wb') as f:
             np.savez(f, T=T, splice=splice, t_start=t_start,
-                     t_end=t_end, seiz_id=seiz_id)    
-    
-    compute_density = True    
+                     t_end=t_end, seiz_id=seiz_id)
+
+    compute_density = True
     fpath = os.path.join(dpath, fnames['Qtuple'])
     if os.path.isfile(fpath):
         with np.load(fpath) as data:
             if 'density' in data:
                 density = data['density']
-                compute_density = False            
+                compute_density = False
             else:
                 print(f'{fpath} is corrupted.\nDeleting it...')
-                os.remove(fpath)    
+                os.remove(fpath)
 
     # Compute and save density
     if compute_density:
         T, splice, density = gpu_density(
-            T, sublen, sigma, dpath, transform=transform, 
-            splice=splice, device_id=device_ids)        
+            T, sublen, sigma, dpath, transform=transform,
+            splice=splice, device_id=device_ids)
         fpath = os.path.join(dpath, fnames['Qtuple'])
         with open(fpath, 'wb') as f:
             np.savez(f, density=density)
@@ -125,17 +125,17 @@ if __name__ == "__main__":
             if not os.path.isfile(fpath):
                 with open(fpath, 'wb') as f:
                     np.savez(f, T=T, splice=splice)
-        
+
 
     # Compute QSMP and indices
     profile, indices = gpu_qsmp(T, sublen, density, dpath, transform=transform,
                         splice=splice, device_id=device_ids)
 
-    
+
     # Find global maxima (root), and fix neighbor and profile
     profile, indices, density = utils.fix_root((profile, indices, density))
 
-    # Save density, QSMP, and indices. np.savez doesn't work in append mode.    
+    # Save density, QSMP, and indices. np.savez doesn't work in append mode.
     fpath = os.path.join(dpath, fnames['Qtuple'])
     with open(fpath, 'wb') as f:
         np.savez(f, density=density, profile=profile, indices=indices)

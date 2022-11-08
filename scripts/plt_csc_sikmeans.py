@@ -46,7 +46,7 @@ fpath = Path(fpath)
 if fpath.is_file():
     with fpath.open('rb') as f:
         D = np.load(f)
-else:    
+else:
     with fpath.open('wb') as f:
         # Training begins
         D, _, _, _, _, _ = sikmeans.shift_invariant_k_means(

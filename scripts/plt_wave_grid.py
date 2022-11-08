@@ -1,11 +1,8 @@
 #%%
-import os
 from pathlib import Path
 import numpy as np
 import qsmp.tree as tree
 import matplotlib.pyplot as plt
-from qsmp.utils import pltaux
-from matplotlib.backends.backend_pdf import PdfPages
 from argparse import ArgumentParser
 #%%
 # Parse command-line arguments
@@ -114,7 +111,7 @@ for i in range(max_modes):
             ax[i, j].set_title(f'{idx[i*max_modes+j]:.0f}', fontsize=8)
 plt.tight_layout()
 #%%
-    
+
 
 # plt.plot(waves_plt.T, color='#1f77b4')
 plt.title(

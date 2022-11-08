@@ -79,7 +79,7 @@ gs = fig.add_gridspec(5, 6)
 for i, sigma in enumerate(sigmas):
     for j, maxdist in enumerate(maxdists):
         ax = fig.add_subplot(gs[i, j])
-        for kk, f in enumerate(path_agg):            
+        for kk, f in enumerate(path_agg):
             modes = tree.find_modes(
                 (profile[:, i], neighbor[:, i], density[:, i]),
                 maxdist, distfunc=f)
@@ -87,7 +87,7 @@ for i, sigma in enumerate(sigmas):
             x0 = X2D[modes_idx[:4], 0]
             # x0[x0 < 0] -= .5*np.arange(np.size((x0 < 0).nonzero()))
             # x0[x0 > 0] += .5*np.arange(np.size((x0 > 0).nonzero()))
-            x1 = X2D[modes_idx[:4], 1]            
+            x1 = X2D[modes_idx[:4], 1]
             # x1[x1 < 0] -= voff[kk]
             # x1[x1 > 0] += voff[kk]
             ax.scatter(x0, x1, marker=markers[kk], label=path_agg[kk],
@@ -102,9 +102,9 @@ for i, sigma in enumerate(sigmas):
                     edgecolor='none')
                 ax.add_patch(arrow)
                 x_tail, y_tail = x_head, y_head
-            
+
             ax.set(xticks=[], yticks=[])
-        if j == 0:            
+        if j == 0:
             ax.set_ylabel(f'{sigma:.3g}')
         if i == 0:
             ax.set_title(f'{maxdist:.3g}')

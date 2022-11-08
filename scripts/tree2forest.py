@@ -39,9 +39,9 @@ minfilt_size = args.minfilt_size
 sigma_str = [str(i) for i in args.sigma]
 sigma_str = '_'.join(sigma_str)
 
-if args.window_type is not None:    
+if args.window_type is not None:
     win_str = f'_{args.window_type}-{int(100*args.window_support)}'
-else:    
+else:
     win_str = ''
 
 # max(,), only on density

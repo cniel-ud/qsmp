@@ -160,12 +160,12 @@ def pick_windows(array, window_length, offset='all'):
         offset = np.expand_dims(offset, axis=1) # (n_rows,)->(n_rows,1)
         col_id = np.arange(window_length).reshape((1, window_length))
         row_id = np.arange(n_rows).reshape(n_rows, 1)
-    elif offset.ndim == 2:        
+    elif offset.ndim == 2:
         # (n_rows,n_offsets)->(n_rows,n_offsets,1):
         offset = np.expand_dims(offset, axis=2)
         col_id = np.arange(window_length).reshape((1, 1, window_length))
         row_id = np.arange(n_rows).reshape(n_rows, 1, 1)
-    
+
     # After broadcasting, col_id.shape=(n_rows,n_offsets,window_length)
     col_id = col_id + offset
 

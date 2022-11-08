@@ -12,7 +12,7 @@ def cut_tree(parent, distance, max_dist, in_place=False):
         dist[i] is the distance from node `i` to its parent, node parent[i].
     max_dist: float
         Distance threshold at which to cut edges in the tree. This converts the in-tree into an in-forest. The child node in the edge that was cut becomes a root.
-    
+
     Returns
     -------
     parent: numpy.ndarray
@@ -24,7 +24,7 @@ def cut_tree(parent, distance, max_dist, in_place=False):
     too_far = distance > max_dist
     if not in_place:
         parent, distance = parent.copy(), distance.copy()
-    
+
     parent[too_far] = np.arange(parent.size)[too_far]
     distance[too_far] = 0
 
@@ -39,12 +39,12 @@ def mark_with_root(parent):
     ----------
     parent: numpy.ndarray
         parent[i] is the index of the parent of node `i`. parent represents an in-forest.
-    
+
     Returns
     -------
     parent: numpy.ndarray
         parent[i] is the index of the root of node `i`.
-        
+
     References:
     /segmentation/_quickshift_cy.pyx in sckit-learn
     """
@@ -52,7 +52,7 @@ def mark_with_root(parent):
     while(old != parent).any():
         old = parent
         parent = parent[parent]
-    
+
     return parent
 
 
@@ -64,10 +64,10 @@ def merge_roots(roots, density, gap):
     roots: numpy.ndarray
         roots[i] is the root of node i. roots.shape=(N,)
     density: numpy.ndarray
-        density[i] is the density estimate evaluated at node i. 
+        density[i] is the density estimate evaluated at node i.
         density.shape=(N,)
     gap: int
-        If two roots are less than `gap` time samples away, they get merged. 
+        If two roots are less than `gap` time samples away, they get merged.
         The root with higher density is the winner.
 
     Returns
@@ -128,17 +128,17 @@ def drop_trivial_matches(nodes, density, gap):
 def k_neighborhood(roots, k, NNdist, NNindex, density, gap):
     """ The k nearest neighbors of a set of roots
 
-    NNdist.shape=(N,). NNdist[i] is the distance between node i 
+    NNdist.shape=(N,). NNdist[i] is the distance between node i
     and its nearest neighbor (NN). N is the number of nodes in the in-forest.
     NNindex.shape=(N,). NNindex[i] is the index of the NN of node i.
     roots.shape=(m,). roots[i] is the start index of the i-th root node.
-    k is an int, the size of the neighborhood of each root.       
+    k is an int, the size of the neighborhood of each root.
 
-    Return a vector `idx` with the indices of each root followed by the 
+    Return a vector `idx` with the indices of each root followed by the
     indices of the their k-NN, sorted in ascending order of distance. `idx`
-    has shape (m*(k+1),). idx[0]=roots[0], idx[1] is the nearest neighbor of idx[0], excluding itselft, idx[2] is the second closest neighbor of idx[0], 
-    idx[k+1]=roots[1], and so on. 
-    
+    has shape (m*(k+1),). idx[0]=roots[0], idx[1] is the nearest neighbor of idx[0], excluding itselft, idx[2] is the second closest neighbor of idx[0],
+    idx[k+1]=roots[1], and so on.
+
     The type of idx is float, as we might have NaN indices in cases where the neighborhood of a mode is too small, and NaN is represented as float.
 
     This function creates the indices that are then used to extract the waves and plot them.
@@ -158,7 +158,7 @@ def k_neighborhood(roots, k, NNdist, NNindex, density, gap):
         else:
             ind_topk = np.argpartition(NNdist[children], k+1)[:k+1]
             children = children[ind_topk]
-            isort = np.argsort(NNdist[children])        
+            isort = np.argsort(NNdist[children])
             idx[i*(k+1):(i+1)*(k+1)] = children[isort]
 
     return idx
@@ -176,12 +176,12 @@ def recompute_distances(NNindex, time_series, wave_length):
     nbytes_per_wave = (wave_length*time_series.dtype.alignment)
     max_num_of_rows = np.int(max_chunk_size/nbytes_per_wave)
     for i in range(n_roots):
-        
+
         root_wave = utils.get_waves(roots_idx[i], time_series, wave_length)
         mu, std = np.mean(root_wave), np.std(root_wave)
         if std == 0: std = 1
         root_wave = (root_wave - mu)/std
-        
+
         children_idx = np.asarray(NNindex == roots_idx[i]).nonzero()[0]
         n_children = children_idx.size
         if n_children > max_num_of_rows:
@@ -207,5 +207,5 @@ def recompute_distances(NNindex, time_series, wave_length):
             sq_dist = 2*wave_length - 2*children_waves @ root_wave
             sq_dist[sq_dist < 1e-10] = 0
             NNdist[children_idx] = np.sqrt(sq_dist)
-    
+
     return NNdist

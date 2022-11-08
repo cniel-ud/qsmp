@@ -53,7 +53,7 @@ def init_centroids(X, n_clusters, centroid_length, metric='euclidean',\
     Returns
     -------
     centroids (numpy.ndarray):
-        The centroid seeds    
+        The centroid seeds
     """
 
     rng = utils.check_rng(rng)
@@ -124,7 +124,7 @@ def _kmeans_plus_plus(X, n_clusters, centroid_length, x_squared_norms,\
     Returns
     -------
     centroids (numpy.ndarray):
-        The centroid seeds    
+        The centroid seeds
 
     Notes
     -----
@@ -238,7 +238,7 @@ def _random_init(X, n_clusters, centroid_length, rng):
     centroids = X[seeds]
     centroids = utils.pick_random_windows(centroids, 1, centroid_length,
                                           rng).squeeze()
-    
+
     return centroids
 
 
@@ -248,7 +248,7 @@ def _random_energy_init(X, n_clusters, centroid_length, rng):
     windows = X[seeds]
     # Pick all windows
     # (n_rows, n_offsets, window_length)
-    windows = utils.pick_windows(windows, centroid_length, offset='all')    
+    windows = utils.pick_windows(windows, centroid_length, offset='all')
     shifts = np.empty(n_clusters, dtype=np.int64)
     for i_centroid in range(n_clusters):
         energy = row_norms(windows[i_centroid], squared=False)
@@ -312,7 +312,7 @@ def shift_invariant_k_means(X, n_clusters, centroid_length, metric='euclidean',\
         shift[i] is the shift that minimizes the distance to the closest
         centroid to the sample X[i].
     distances (numpy.ndarray):
-        distances[i] is the distance from X[i,shift[i]:shift[i]+centroid_length] 
+        distances[i] is the distance from X[i,shift[i]:shift[i]+centroid_length]
         to its closest centroid.
     inertia (float):
         The sum of squared euclidean distances to the closest centroid of all the
@@ -338,10 +338,10 @@ def shift_invariant_k_means(X, n_clusters, centroid_length, metric='euclidean',\
         x_squared_norms = wrappers.si_row_norms(X, centroid_length,
                                                 squared=True)
 
-    
+
     ss = rng.bit_generator._seed_seq
     child_seeds = ss.spawn(n_init)
-    streams = [np.random.default_rng(s) for s in child_seeds]    
+    streams = [np.random.default_rng(s) for s in child_seeds]
 
     for seed in streams:
         # run a shift-invariant k-means once

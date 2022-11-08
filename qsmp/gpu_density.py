@@ -13,8 +13,6 @@ import multiprocessing as mp
 import os
 from pathlib import Path
 from time import perf_counter
-from xml.etree import cElementTree
-from ipdb import set_trace
 
 import numpy as np
 from numba import cuda
@@ -323,6 +321,11 @@ def _gpu_density(
         t_elapsed_hr = 0
         tot_elapsed_hr = 0
         for i in range(range_start, range_stop):
+            if i == 13:
+                cuda.profile_start()
+            elif i == 14:
+                cuda.profile_stop()
+
             t_start = perf_counter()
             _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](
                 i,
@@ -342,6 +345,9 @@ def _gpu_density(
                 device_density,
                 True,
             )
+            if i % 10000 == 0:
+                print(f'=== {i}/{range_stop} ===')
+
             # set_trace()
             t_stop = perf_counter()
             t_elapsed_hr += (t_stop - t_start)/3600
@@ -406,8 +412,6 @@ def gpu_density(T, m, sigma, dpath, transform=None,
     if splice is None:
         splice = np.full(0, 0)
 
-    print('===> Before whiten:', flush=True)
-    print(f'm={m}, T.shape={T.shape}')
     if transform == 'whiten':
         fs, n_taps = 512, 1001
         f, Px_mean = core.mean_PSD(T, splice)
@@ -415,9 +419,6 @@ def gpu_density(T, m, sigma, dpath, transform=None,
             f, Px_mean, n_taps=n_taps, fs=fs)
         grp_delay = core.get_group_delay(coeffs, f, fs=fs)
         T, splice = core.whiten(T, splice, coeffs, grp_delay)
-
-    print('===> After whiten:', flush=True)
-    print(f'm={m}, T.shape={T.shape}')
 
     T, M_T, Σ_T = core.preprocess(T, m)
     if window is not None:

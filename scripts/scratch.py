@@ -9,9 +9,8 @@ import utils
 from spectrum import MultiTapering, pmtm
 import matplotlib.pyplot as plt
 from numpy.random import default_rng
-from scipy.fft import fft, ifft
+from scipy.fft import ifft
 import scipy.signal as signal
-from scipy.interpolate import UnivariateSpline
 import core
 
 #%%
@@ -34,7 +33,7 @@ plt.clf()
 plt.figure(figsize=(11.5, 8))
 titles = ['Average amplitude spectrum',
           'Desired filter response', 'Filter response']
-for i, Px_i in enumerate(Px_list):    
+for i, Px_i in enumerate(Px_list):
     plt.plot(f, 10*np.log10(np.sqrt(Px_i)))
 
 freq, response = signal.freqz(coeffs, fs=fs)
@@ -48,7 +47,7 @@ plt.xlim(0, 256)
 plt.grid(True)
 plt.title(f'Linear-phase filter, {n_taps} taps')
 plt.show()
-#%% filt_T has the first `group_delay` samples from each filtered segment 
+#%% filt_T has the first `group_delay` samples from each filtered segment
 # removed
 grp_delay = core.get_group_delay(coeffs, f, fs=fs)
 filt_T, new_splice = core.whiten(T, splice, coeffs, grp_delay)
@@ -143,7 +142,7 @@ for i, sample_i in enumerate(sample_list):
         psd = MultiTapering(sample_i[j], NFFT=NFFT, NW=3, sampling=512)
         Px[j] = psd.psd
 
-    f = psd.frequencies()    
+    f = psd.frequencies()
     Px_plt, n_rows, n_cols = pltaux.wave_matrix(10*np.log(Px))
     ax[i].plot(Px_plt.T, color='#1f77b4')
     ax[i].set_title(titles[i])

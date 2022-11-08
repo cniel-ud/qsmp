@@ -1,4 +1,3 @@
-import os, sys
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -29,20 +28,20 @@ def wave(sig, shift, centroid_length):
     return wave
 
 def align_waves(X, shift, centroid_length):
-    
+
     nwav, wavlen = X.shape
     zeroshift = wavlen - centroid_length
     shift = zeroshift - shift
     newlen = 2*wavlen - centroid_length
     newX = np.full((nwav, newlen), np.nan)
-    
+
     rowind = np.arange(nwav)[:, None]
     colind = np.arange(wavlen)[None,:] + shift[:, None]
 
     newX[rowind, colind] = X
 
     return newX
-    
+
 def wave_matrix(X, hgap=4, vgap=None, ncols=None):
     """
     Create a 2D grid of waves
@@ -55,21 +54,21 @@ def wave_matrix(X, hgap=4, vgap=None, ncols=None):
         Horizontal gap = wave length / hgap
     vgap (int)
         A fixed gap between the minimum of one row and the maximum of the row below in a 2D grid of waves
-    
+
     Returns
     -------
     X (array)
-        A matrix representing a 2D grid of k = m * n waves, with n the greatest 
+        A matrix representing a 2D grid of k = m * n waves, with n the greatest
         power of two that is less than log2(k)/2. X.shape=(m,l), with l=n*P+(n-1)*hgap. hgap = ceil(P/4) is the horizontal gap between waves in a row.
     """
     nwav, wavlen = X.shape
 
     if ncols is None:
-        ncols, _ = _factor(nwav)    
+        ncols, _ = _factor(nwav)
 
     hgap = np.ceil(wavlen/hgap).astype('int')
     nangap = np.full((nwav, hgap), np.nan)
-    X = np.hstack((X, nangap))        
+    X = np.hstack((X, nangap))
     ind = np.arange(ncols, nwav-ncols+1, ncols)
     X = np.split(X, ind)
     X = np.vstack(list(map(np.ravel, X)))

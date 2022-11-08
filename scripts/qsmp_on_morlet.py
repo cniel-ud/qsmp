@@ -103,7 +103,8 @@ if compute_density:
 
 # Compute QSMP and indices
 profile, indices = gpu_qsmp(
-    T, sublen, minfilt_size, density, root, splice=splice, device_id=device_ids)
+    T, sublen, minfilt_size, density, root, splice=splice, device_id=device_ids
+)
 
 # Find global maxima (root), and fix neighbor and profile
 profile, indices, density = utils.fix_root((profile, indices, density))

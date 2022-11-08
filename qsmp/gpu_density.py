@@ -12,6 +12,7 @@ import math
 import multiprocessing as mp
 import os
 from pathlib import Path
+import nvtx
 from time import perf_counter
 
 import numpy as np
@@ -322,9 +323,9 @@ def _gpu_density(
         tot_elapsed_hr = 0
         for i in range(range_start, range_stop):
             if i == 13:
-                cuda.profile_start()
+                st_rng = nvtx.start_range("density", color="blue")
             elif i == 14:
-                cuda.profile_stop()
+                nvtx.end_range(st_rng)
 
             t_start = perf_counter()
             _compute_and_update_density_kernel[blocks_per_grid, threads_per_block](

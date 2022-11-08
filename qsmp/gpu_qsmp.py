@@ -18,9 +18,8 @@ from numba import cuda
 
 from qsmp import core, config
 from time import perf_counter
-from qsmp.utils import utils
+import cupy
 
-from ipdb import set_trace
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +137,9 @@ def chkpt_write(dpath:Path, device_id, i, profile, indices,
     fname = f'device{device_id}_checkpoint.npz'
     fpath = dpath.joinpath(fname)
 
+    profile = cupy.asnumpy(profile)
+    indices = cupy.asnumpy(indices)
+
     with fpath.open('wb') as f:
         np.savez(f, range_start=i, profile=profile, indices=indices)
 
@@ -171,23 +173,36 @@ def chkpt_clean(dpath:Path, device_id):
     if fpath.is_file():
         os.remove(fpath)
 
-def _update_profile_and_indices(i, device_dist_vec, minfilt_size,
-        density, profile, indices):
-    """
-    NOTE: minfilt_size has to be even...for now...
-    """
+@cuda.jit
+def _min_argmin_kernel(dist_vec, mindist, mindist_idx, minfilt_size):
+    i = cuda.grid(1)
+    # stride = cuda.gridsize(1) XXX: useful with multiple GPUS??
+
+    prev_min = math.inf
+    sz = dist_vec.size
+    if i < sz:
+        for j in range(max(0,i-minfilt_size//2), min(sz, i+minfilt_size//2)):
+            #XXX: multiple threads reading from the same memory. Is this a
+            # problem?
+            if dist_vec[j] < prev_min:
+                mindist_idx[i] = j
+                mindist[i] = dist_vec[j]
+                prev_min = dist_vec[j]
+
+def _update_NNdist_and_NNdindex(
+    i, mindist, density, profile, indices):
+    # if i == 0:
+    #     set_trace()
     n_sigmas = density.shape[1]
-    dist_vec = device_dist_vec.copy_to_host()
-    dist_si_idx = utils.move_argmin(dist_vec, minfilt_size)
-    dist_si = dist_vec[dist_si_idx]
-    for sigma_idx in range(n_sigmas):
-        higher_density = (
-            density[:, sigma_idx] > density[i, sigma_idx]).nonzero()[0]
+    mindist_cp = cupy.asarray(mindist)
+    for sigma_idx in range(n_sigmas): #XXX: vectorize???
+        higher_density = cupy.nonzero(
+            density[:, sigma_idx] > density[i, sigma_idx])[0]
         if higher_density.size > 0:
-            j_min = np.argmin(dist_si[higher_density])
+            j_min = cupy.argmin(mindist_cp[higher_density])
             j_min = higher_density[j_min]
-            profile[i, sigma_idx] = dist_si[j_min]
-            indices[i, sigma_idx] = dist_si_idx[j_min]
+            profile[i, sigma_idx] = mindist_cp[j_min]
+            indices[i, sigma_idx] = j_min
 
 def _gpu_qsmp(
     T_fname,
@@ -272,19 +287,15 @@ def _gpu_qsmp(
     QT_first = np.load(QT_first_fname, allow_pickle=False)
     M_T = np.load(M_T_fname, allow_pickle=False)
     Σ_T = np.load(Σ_T_fname, allow_pickle=False)
+    mindist = np.full(k, np.inf)
+    mindist_idx = np.zeros(k, dtype=int)
 
     with cuda.gpus[device_id]:
 
-        #XXX: This function needs to be refactored:
         n_sigmas = density.shape[1]
         range_start, profile, indices = chkpt_read(\
             dpath, device_id, range_start, k, n_sigmas)
         dist_vec = np.full(k, np.inf)  # float64
-        print('===> After chkpt_read:', flush=True)
-        print(f'k={k}')
-        print(f'profile.shape={profile.shape}', flush=True)
-        print(f'density.shape={density.shape}', flush=True)
-
 
         for i in splice:
             profile[i-m+1:i, :] = 0
@@ -298,6 +309,11 @@ def _gpu_qsmp(
         device_M_T = cuda.to_device(M_T)
         device_Σ_T = cuda.to_device(Σ_T)
         device_dist_vec = cuda.to_device(dist_vec)
+        device_mindist = cuda.to_device(mindist)
+        device_mindist_idx = cuda.to_device(mindist_idx)
+        density_cp = cupy.asarray(density)
+        profile_cp = cupy.asarray(profile)
+        indices_cp = cupy.asarray(indices)
 
         _compute_and_update_dist_kernel[blocks_per_grid, threads_per_block](
             range_start - 1,
@@ -313,15 +329,19 @@ def _gpu_qsmp(
             device_dist_vec,
             False,
         )
-        # XXX: range_start-1=0 for 1 GPU, can we still do multiple GPUs here?
-        _update_profile_and_indices(
-            range_start-1, device_dist_vec, minfilt_size,
-            density, profile, indices
-        )
+
+        _min_argmin_kernel[blocks_per_grid, threads_per_block](
+            device_dist_vec, device_mindist, device_mindist_idx, minfilt_size)
+        _update_NNdist_and_NNdindex(
+            range_start-1, device_mindist, density_cp, profile_cp, indices_cp)
 
         t_elapsed_hr = 0
         tot_elapsed_hr = 0
         for i in range(range_start, range_stop):
+            if i == 13:
+                cuda.profile_start()
+            elif i == 14:
+                cuda.profile_stop()
             t_start = perf_counter()
             _compute_and_update_dist_kernel[blocks_per_grid, threads_per_block](
                 i,
@@ -337,28 +357,29 @@ def _gpu_qsmp(
                 device_dist_vec,
                 True,
             )
-            t_stop = perf_counter()
-            t_elapsed = t_stop - t_start
-            print(f'====> i={i}, time in kernel: {t_elapsed} seconds')
-            t_start = perf_counter()
-            _update_profile_and_indices(
-                i, device_dist_vec, minfilt_size,
-                density, profile, indices
+            if i % 10000 == 0:
+                print(f'=== {i}/{range_stop} ===')
+
+            _min_argmin_kernel[blocks_per_grid, threads_per_block](
+                device_dist_vec, device_mindist,
+                device_mindist_idx, minfilt_size
+            )
+            _update_NNdist_and_NNdindex(
+                i, device_mindist, density_cp, profile_cp, indices_cp
             )
 
             t_stop = perf_counter()
-            t_elapsed = t_stop - t_start
-            print(
-                f'====> i={i}, time updating NNdist and NNindex: {t_elapsed} seconds')
-            # t_elapsed_hr += (t_stop - t_start)/3600
-            # if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
-            #     tot_elapsed_hr += t_elapsed_hr
-            #     t_elapsed_hr = 0
-            #     chkpt_write(dpath, device_id, i, profile,
-            #                 indices, range_start, tot_elapsed_hr)
+            t_elapsed_hr += (t_stop - t_start)/3600
+            if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
+                tot_elapsed_hr += t_elapsed_hr
+                t_elapsed_hr = 0
+                chkpt_write(dpath, device_id, i, profile_cp,
+                            indices_cp, range_start, tot_elapsed_hr)
 
-        # chkpt_clean(dpath, device_id)
+        chkpt_clean(dpath, device_id)
 
+        profile = cupy.asnumpy(profile_cp)
+        indices = cupy.asnumpy(indices_cp)
         profile = np.sqrt(profile)
 
         profile_fname = core.array_to_temp_file(profile)

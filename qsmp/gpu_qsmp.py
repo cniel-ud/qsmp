@@ -389,8 +389,7 @@ def _gpu_qsmp(
 
 
 def gpu_qsmp(
-    T, m, minfilt_size, density, dpath,
-    transform=None, splice=None, device_id=0):
+    T, m, minfilt_size, density, dpath, splice=None, device_id=0):
     """
     Compute the z-normalized Quick Shift Matrix Profile with one or more
     GPU devices.
@@ -437,17 +436,6 @@ def gpu_qsmp(
     # CUDA_ERROR_INVALID_VALUE".
     if splice is None:
         splice = np.full(0, 0)
-
-    print('===> Before whiten:', flush=True)
-    print(f'm={m}, T.shape={T.shape}')
-    if transform == 'whiten':
-        print(
-            'Was the data already whitened when computing the density?',
-            'Are you passing the original time series or its whitened version?'
-        )
-
-    print('===> After whiten:', flush=True)
-    print(f'm={m}, T.shape={T.shape}')
 
     T, M_T, Σ_T = core.preprocess(T, m)
 

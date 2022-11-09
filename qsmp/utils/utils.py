@@ -312,6 +312,6 @@ def args2str(args):
 
     name_pat = (
         f'm-{args.subseq_len}_sigma-{sigma_str}{win_str}'
-        f'{tr_str}minfilt-{args.minfilt_size}'
+        f'{tr_str}_minfilt-{args.minfilt_size}'
     )
     return name_pat

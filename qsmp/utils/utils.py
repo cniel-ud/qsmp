@@ -5,6 +5,7 @@ import h5py
 import numpy as np
 import pickle
 import numbers
+from pathlib import Path
 
 # Pattern for path to file rx < id > .mat
 FILE_ID_PAT = '.*/rx(?P<id>\d+).mat$'
@@ -32,7 +33,7 @@ def check_rng(seed):
     if isinstance(seed, np.random.Generator):
         return seed
 
-def loadmat73(fpath, varname):
+def loadmat73(fpath:Path, varname):
     """ Load data from a -v7.3 Matlab file."""
     with h5py.File(fpath, 'r') as hdf5:
         dataset = hdf5[varname]
@@ -108,14 +109,15 @@ def make_get_id(p):
         return m.group('id')
     return _get_id
 
-def cat_segments(dpath, W, train_len=None):
+def cat_segments(dpath:Path, W, train_len=None):
 
     if train_len:
         print(f'Requested the first {train_len} time points')
 
     p = re.compile(FILE_ID_PAT)
 
-    globpath = os.path.join(dpath, RX_GLOB)
+    globpath = dpath.joinpath(RX_GLOB)
+    #XXX: a better way to do this using Path methods?
     files = glob.glob(globpath)
 
     get_id = make_get_id(p)
@@ -292,3 +294,24 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
     ind = ind + i_seg*grp_delay
 
     return ind
+
+
+def args2str(args):
+    sigma_str = [str(i) for i in args.sigma]
+    sigma_str = '_'.join(sigma_str)
+
+    if args.window_type is not None:
+        win_str = f'_{args.window_type}-{int(100*args.window_support)}'
+    else:
+        win_str = ''
+
+    if args.transform is not None:
+        tr_str = f'_{args.transform}'
+    else:
+        tr_str = ''
+
+    name_pat = (
+        f'm-{args.subseq_len}_sigma-{sigma_str}{win_str}'
+        f'{tr_str}minfilt-{args.minfilt_size}'
+    )
+    return name_pat

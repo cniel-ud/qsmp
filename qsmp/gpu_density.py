@@ -153,49 +153,64 @@ def _compute_and_update_density_kernel(
 
 
 
-def chkpt_write(dpath:Path, device_id, i, device_density, range_start, t_elapsed_hr):
+#XXX: parametrize file name
+def chkpt_write(
+    dpath: Path, params_str, device_id, i,
+    device_density, device_QT_even, device_QT_odd,
+    range_start, t_elapsed_hr
+    ):
     """ Save density to checkpointing file
 
     The density is saved periodically (see QSMP_CHECKPOINT_PERIOD in config.py) in case the job gets killed (SIGTERM or preemption in SLURM).
     """
     # Checkpoint file that saves last `i` processed before SIGTERM
-    fname = f'device{device_id}_checkpoint.npz'
+    fname = f'GPU-{device_id}_{params_str}_chkpt.npz'
     fpath = dpath.joinpath(fname)
 
     density = device_density.copy_to_host()
+    QT_even = device_QT_even.copy_to_host()
+    QT_odd = device_QT_odd.copy_to_host()
 
     with fpath.open('wb') as f:
-        np.savez(f, range_start=i, density=density)
+        np.savez(
+            f, range_start=i+1,
+            density=density, QT_even=QT_even, QT_odd=QT_odd
+        )
 
     print(f'GPU #{device_id}\n'
           f'{t_elapsed_hr:.3g} hours elapsed. Checkpointing...\n'
           f'i = {i}, range_start = {range_start}', flush=True)
 
-def chkpt_read(dpath:Path, device_id, range_start, k, n_bw):
+def chkpt_read(dpath:Path, params_str, device_id, range_start, k, n_bw):
     """ Read density from checkpointing file """
 
-    fname = f'device{device_id}_checkpoint.npz'
+    fname = f'GPU-{device_id}_{params_str}_chkpt.npz'
     fpath = dpath.joinpath(fname)
     if fpath.is_file():
         old_start = range_start
         with np.load(fpath) as data:
             range_start = data['range_start']
             density = data['density']
+            QT_even = data['QT_even']
+            QT_odd = data['QT_odd']
+
         print(f'Checkpoint found for GPU #{device_id}\n'
               f'Previous start: {old_start}\n'
               f'New start: {range_start}', flush=True)
     else:
         density = np.zeros((k, n_bw))  # float64
+        QT_even = np.full(0,0)
+        QT_odd = np.full(0,0)
 
-    return range_start, density
+    return range_start, density, QT_even, QT_odd
 
 
-def chkpt_clean(dpath:Path, device_id):
+def chkpt_clean(dpath:Path, params_str, device_id):
     """ Remove checkpointing file """
-    fname = f'device{device_id}_checkpoint.npz'
+    fname = f'GPU-{device_id}_{params_str}_chkpt.npz'
     fpath = dpath.joinpath(fname)
     if fpath.is_file():
-        os.remove(fpath)
+        fpath.unlink()
 
 def _gpu_density(
     T_fname,
@@ -212,6 +227,7 @@ def _gpu_density(
     QT_first_fname,
     k,
     dpath,
+    params_str,
     range_start=1,
     device_id=0,
 ):
@@ -257,8 +273,10 @@ def _gpu_density(
         current sliding window
     k : int
         The total number of sliding windows to iterate over
-    dpath: string
+    dpath: Path
         Absolute path to folder where checkpointing files are to be saved
+    params_str:
+        String to be used in naming the checkpointing files
     range_start : int
         The starting index value along T for which to start the density
         calculation. Default is 1.
@@ -281,15 +299,25 @@ def _gpu_density(
     centeredness = np.load(centeredness_fname, allow_pickle=False)
     fwhm = np.load(fwhm_fname, allow_pickle=False)
 
+    # XXX: Parent function adds a 1 to `start`, and then substracts that 1
+    # here. This is probably unnecesary and might cause confusion. The 1 added
+    # in the else clause follows the same behaviour.
     n_sigma = sigma.size
+    new_range_start, density, QT_even, QT_odd = chkpt_read(
+        dpath, params_str, device_id, range_start, k, n_sigma)
+    if new_range_start == range_start:
+        QT_odd = QT
+        QT_even = QT
+        compute_QT = False
+    else:
+        compute_QT = True
+        range_start = new_range_start + 1
 
     with cuda.gpus[device_id]:
 
-        range_start, density = chkpt_read(
-            dpath, device_id, range_start, k, n_sigma)
         device_T = cuda.to_device(T)
-        device_QT_odd = cuda.to_device(QT)
-        device_QT_even = cuda.to_device(QT)
+        device_QT_odd = cuda.to_device(QT_odd)
+        device_QT_even = cuda.to_device(QT_even)
         device_QT_first = cuda.to_device(QT_first)
         device_M_T = cuda.to_device(M_T)
         device_Σ_T = cuda.to_device(Σ_T)
@@ -315,7 +343,7 @@ def _gpu_density(
             k,
             excl_zone,
             device_density,
-            False,
+            compute_QT,
         )
         # set_trace()
 
@@ -355,10 +383,13 @@ def _gpu_density(
             if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
                 tot_elapsed_hr += t_elapsed_hr
                 t_elapsed_hr = 0
-                chkpt_write(dpath, device_id, i, device_density,
-                            range_start, tot_elapsed_hr)
+                chkpt_write(
+                    dpath, params_str,  device_id, i,
+                    device_density, device_QT_even, device_QT_odd,
+                    range_start, tot_elapsed_hr
+                )
 
-        chkpt_clean(dpath, device_id)
+        chkpt_clean(dpath, params_str, device_id)
         density = device_density.copy_to_host()
 
         density_fname = core.array_to_temp_file(density)
@@ -366,7 +397,7 @@ def _gpu_density(
     return density_fname
 
 
-def gpu_density(T, m, sigma, dpath, transform=None,
+def gpu_density(T, m, sigma, dpath, params_str, transform=None,
                 splice=None, window=None, device_id=0):
     """
     Estimate the density of subsequences of the z-normalized matrix
@@ -384,8 +415,10 @@ def gpu_density(T, m, sigma, dpath, transform=None,
         Window size
     sigma : numpy.ndarray
         Standard deviation of the Gaussian kernel used to estimate the density.
-    dpath: string
+    dpath: Path
         Absolute path to folder where checkpointing files are to be saved
+    params_str: str
+        A string to be used in naming the checkpointing files
     transform: None or string
         Transform to be applied to either the distances or the time series. If 'fwhm', scale the distances by the FWHM of the autocorrelation of the subsequences. If 'whiten', build a whitening filter from the average PSD of the data and apply the filter to de-emphasize low frequencies and emphasize high frequencies.
     splice : numpy.ndarray(dtype=uint64)
@@ -511,6 +544,7 @@ def gpu_density(T, m, sigma, dpath, transform=None,
                     QT_first_fname,
                     k,
                     dpath,
+                    params_str,
                     start + 1,
                     device_ids[idx],
                 ),
@@ -533,6 +567,7 @@ def gpu_density(T, m, sigma, dpath, transform=None,
                 QT_first_fname,
                 k,
                 dpath,
+                params_str,
                 start + 1,
                 device_ids[idx],
             )
@@ -571,4 +606,7 @@ def gpu_density(T, m, sigma, dpath, transform=None,
     if core.are_distances_too_small(density[0], threshold=threshold):  # pragma: no cover
         logger.warning(f"A large number of values are smaller than {threshold}.")
 
-    return T, splice, density[0]
+    if transform == 'whiten':
+        return T, splice, density[0], grp_delay
+    else:
+        return T, splice, density[0]

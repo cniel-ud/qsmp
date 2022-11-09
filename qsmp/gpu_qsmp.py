@@ -129,28 +129,33 @@ def _compute_and_update_dist_kernel(
         dist_vec[j] = D
 
 
-def chkpt_write(dpath:Path, device_id, i, profile, indices,
-                range_start, t_elapsed_hr):
+def chkpt_write(dpath: Path, params_str, device_id, i, profile, indices,
+                device_QT_even, device_QT_odd, range_start, t_elapsed_hr):
     """ Save distance and index profile to checkpointing file
 
     The density is saved periodically (see QSMP_CHECKPOINT_PERIOD in config.py) in case the job gets killed (SIGTERM or preemption in SLURM).
     """
-    fname = f'device{device_id}_checkpoint.npz'
+
+    fname = f'GPU-{device_id}_{params_str}_chkpt.npz'
     fpath = dpath.joinpath(fname)
 
     profile = cupy.asnumpy(profile)
     indices = cupy.asnumpy(indices)
+    QT_even = device_QT_even.copy_to_host()
+    QT_odd = device_QT_odd.copy_to_host()
 
     with fpath.open('wb') as f:
-        np.savez(f, range_start=i, profile=profile, indices=indices)
+        np.savez(f, range_start=i+1, profile=profile,
+                 indices=indices, QT_even=QT_even, QT_odd=QT_odd)
 
     print(f'GPU #{device_id}\n'
           f'{t_elapsed_hr:.3g} hours elapsed. Checkpointing...\n'
           f'i = {i}, range_start = {range_start}', flush=True)
 
-def chkpt_read(dpath:Path, device_id, range_start, k, n_bw):
+def chkpt_read(dpath: Path, params_str, device_id, range_start, k, n_bw):
     """ Read distance and index profile from checkpointing file """
-    fname = f'device{device_id}_checkpoint.npz'
+
+    fname = f'GPU-{device_id}_{params_str}_chkpt.npz'
     fpath = dpath.joinpath(fname)
     if fpath.is_file():
         old_start = range_start
@@ -158,21 +163,28 @@ def chkpt_read(dpath:Path, device_id, range_start, k, n_bw):
             range_start = data['range_start']
             profile = data['profile']
             indices = data['indices']
+            QT_even = data['QT_even']
+            QT_odd = data['QT_odd']
+
         print(f'Checkpoint found for GPU #{device_id}\n'
               f'Previous start: {old_start}\n'
               f'New start: {range_start}', flush=True)
     else:
         profile = np.full((k, n_bw), np.inf)  # float64
         indices = np.full((k, n_bw), -1, dtype=np.int64)  # int64
+        QT_even = np.full(0, 0)
+        QT_odd = np.full(0, 0)
 
-    return range_start, profile, indices
+    return range_start, profile, indices, QT_even, QT_odd
 
-def chkpt_clean(dpath:Path, device_id):
+
+def chkpt_clean(dpath: Path, params_str, device_id):
     """ Remove checkpointing file """
-    fname = f'device{device_id}_checkpoint.npz'
+
+    fname = f'GPU-{device_id}_{params_str}_chkpt.npz'
     fpath = dpath.joinpath(fname)
     if fpath.is_file():
-        os.remove(fpath)
+        fpath.unlink()
 
 @cuda.jit
 def _min_argmin_kernel(dist_vec, mindist, mindist_idx, minfilt_size):
@@ -219,6 +231,7 @@ def _gpu_qsmp(
     QT_first_fname,
     k,
     dpath,
+    params_str,
     range_start=1,
     device_id=0,
 ):
@@ -264,8 +277,10 @@ def _gpu_qsmp(
         current sliding window
     k : int
         The total number of sliding windows to iterate over
-    dpath: string
+    dpath: Path
         Absolute path to folder where checkpointing files are to be saved
+    params_str: str
+        A string to be used in naming the checkpointing files
     range_start : int
         The starting index value along T for which to start the distance
         and index calculation. Default is 1.
@@ -291,11 +306,22 @@ def _gpu_qsmp(
     mindist = np.full(k, np.inf)
     mindist_idx = np.zeros(k, dtype=int)
 
+    # XXX: Parent function adds a 1 to `start`, and then substracts that 1
+    # here. This is probably unnecesary and might cause confusion. The 1 added
+    # in the else clause follows the same behaviour.
+    n_sigmas = density.shape[1]
+    new_range_start, profile, indices, QT_even, QT_odd = chkpt_read(
+        dpath, params_str, device_id, range_start, k, n_sigmas)
+    if new_range_start == range_start:
+        QT_odd = QT
+        QT_even = QT
+        compute_QT = False
+    else:
+        compute_QT = True
+        range_start = new_range_start + 1
+
     with cuda.gpus[device_id]:
 
-        n_sigmas = density.shape[1]
-        range_start, profile, indices = chkpt_read(\
-            dpath, device_id, range_start, k, n_sigmas)
         dist_vec = np.full(k, np.inf)  # float64
 
         for i in splice:
@@ -304,8 +330,8 @@ def _gpu_qsmp(
             indices[i-m+1:i, :] = np.repeat(splice_ind, n_sigmas, axis=1)
 
         device_T = cuda.to_device(T)
-        device_QT_odd = cuda.to_device(QT)
-        device_QT_even = cuda.to_device(QT)
+        device_QT_odd = cuda.to_device(QT_odd)
+        device_QT_even = cuda.to_device(QT_even)
         device_QT_first = cuda.to_device(QT_first)
         device_M_T = cuda.to_device(M_T)
         device_Σ_T = cuda.to_device(Σ_T)
@@ -328,7 +354,7 @@ def _gpu_qsmp(
             k,
             excl_zone,
             device_dist_vec,
-            False,
+            compute_QT,
         )
 
         _min_argmin_kernel[blocks_per_grid, threads_per_block](
@@ -374,10 +400,10 @@ def _gpu_qsmp(
             if t_elapsed_hr > config.QSMP_CHECKPOINT_PERIOD:
                 tot_elapsed_hr += t_elapsed_hr
                 t_elapsed_hr = 0
-                chkpt_write(dpath, device_id, i, profile_cp,
-                            indices_cp, range_start, tot_elapsed_hr)
+                chkpt_write(dpath, params_str, device_id, i, profile_cp,
+                            indices_cp, device_QT_even, device_QT_odd, range_start, tot_elapsed_hr)
 
-        chkpt_clean(dpath, device_id)
+        chkpt_clean(dpath, params_str, device_id)
 
         profile = cupy.asnumpy(profile_cp)
         indices = cupy.asnumpy(indices_cp)
@@ -390,7 +416,7 @@ def _gpu_qsmp(
 
 
 def gpu_qsmp(
-    T, m, minfilt_size, density, dpath, splice=None, device_id=0):
+    T, m, minfilt_size, density, dpath, params_str, splice=None, device_id=0):
     """
     Compute the z-normalized Quick Shift Matrix Profile with one or more
     GPU devices.
@@ -409,8 +435,10 @@ def gpu_qsmp(
         distance vector from the distance profile of each subsequence.
     density : ndarray
         Density of subsequences of length m in T
-    dpath: string
+    dpath: Path
         Absolute path to folder where checkpointing files are to be saved
+    params_str: str
+        A string to be used in naming the checkpointing files
     transform: None or string
         Transform to be applied to either the distances or the time series. If 'fwhm', scale the distances by the FWHM of the autocorrelation of the subsequences. If 'whiten', build a whitening filter from the average PSD of the data and apply the filter to de-emphasize low frequencies and emphasize high frequencies.
     splice : numpy.ndarray
@@ -509,6 +537,7 @@ def gpu_qsmp(
                     QT_first_fname,
                     k,
                     dpath,
+                    params_str,
                     start + 1,
                     device_ids[idx],
                 ),
@@ -530,6 +559,7 @@ def gpu_qsmp(
                 QT_first_fname,
                 k,
                 dpath,
+                params_str,
                 start + 1,
                 device_ids[idx],
             )

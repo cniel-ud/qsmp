@@ -74,6 +74,7 @@ if __name__ == '__main__':
     #XXX: make a more generic (parametrized) name
     if transform == 'whiten':
         whitened_T_splice_file = 'qsmp_T_splice_whitened.npz'
+        whitened_T_splice_file = dpath.joinpath(whitened_T_splice_file)
 
     get_data = True
     T_splice_file = dpath.joinpath(T_splice_file)
@@ -116,8 +117,6 @@ if __name__ == '__main__':
             else:
                 print(f'{str(out_file)} is corrupted.\nDeleting it...')
                 out_file.unlink()
-
-    whitened_T_splice_file = dpath.joinpath(whitened_T_splice_file)
 
     # Compute and save density
     if compute_density:

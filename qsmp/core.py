@@ -1492,7 +1492,6 @@ def _get_QT(start, T_A, T_B, m):
     QT_first : numpy.ndarray
          QT for the first window
     """
-    # QT and QT first are the same for a self-join
     QT = sliding_dot_product(T_B[start : start + m], T_A)
     QT_first = sliding_dot_product(T_A[:m], T_B)
 
@@ -2233,3 +2232,54 @@ def whiten(T, splice, coeffs, grp_delay):
         dstart = dend
 
     return filt_T, new_splice
+
+
+def whiten_alignment(T, splice, grp_delay):
+    """ Align original time series T with whitened version
+
+    Parameters
+    ----------
+    T: numpy.ndarray(dtype=float64)
+        Time series. T.shape=(l,).
+    splice: numpy.ndarray(dtype=int64)
+        splice[i] has the start index of the (i+1)th-segment (e.g., 2nd segment
+        starts at splice[0], 3rd segment at splice[1], and so on), for i=0,..,
+        n-2, and n being the number of segments that were concatenated to form
+        T.
+    coeffs: numpy.ndarray(dtype=float64)
+        Vector of coefficients of a linear-phase FIR filter
+    grp_delay: int
+        Group delay of filter with coefficients `coeffs`.
+
+    Returns
+    -------
+    crop_T: numpy.ndarray(dtype=float64)
+        Filtered time series. If splice is not empty, discard first `grp_delay` samples, and concatenate back.
+    new_splice: numpy.ndarray(dtype=int64)
+        Update splice indices, after discarding the first `grp_delay` samples
+        on each filtered segment.
+
+    XXX: This wouldn't be necessary if we use a zero-phase filter. We are currently using a linear phase filter.
+    """
+
+    n_seg = splice.size + 1
+    end_seg = np.r_[splice, T.size]  # end index of each segment
+    end_seg = end_seg
+
+    crop_T = np.zeros(T.size-n_seg*grp_delay)
+
+    start = 0
+    dstart = 0
+    new_splice = np.zeros(splice.shape, dtype=np.int64)
+    # XXX: vectorize!!
+    for i, end in enumerate(end_seg):
+
+        if i > 0:
+            new_splice[i-1] = dstart
+
+        dend = end - (i+1)*grp_delay
+        crop_T[dstart:dend] = T[start + grp_delay: end]
+        start = end
+        dstart = dend
+
+    return crop_T, new_splice

@@ -137,7 +137,7 @@ if __name__ == '__main__':
                     splice=splice, window=win, device_id=device_ids
                 )
                 with whitened_T_splice_file.open('wb') as f:
-                    np.savez(f, T=T_w, splice=splice_w)
+                    np.savez(f, T=T_w, splice=splice_w, grp_delay=grp_delay)
         else:
             _, _, density = gpu_density(
                 T, sublen, sigma, dpath, params_str, transform=transform,

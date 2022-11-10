@@ -320,6 +320,7 @@ def _gpu_qsmp(
         compute_QT = True
         range_start = new_range_start + 1
 
+    #XXX: Use https://github.com/rapidsai/rmm ???
     with cuda.gpus[device_id]:
 
         dist_vec = np.full(k, np.inf)  # float64

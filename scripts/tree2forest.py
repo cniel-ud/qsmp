@@ -107,9 +107,6 @@ with PdfPages(impath) as pdf:
             NNi, winning_modes, tree_size = tree.merge_roots(
                 NNi, density[i_sigma], sublen/4)
 
-            #XXX: recompute distances when whitening???
-            NNd = tree.recompute_distances(NNi, T, sublen)
-
             #%%
             idx = tree.k_neighborhood(winning_modes[:max_modes],
                                       k, NNd, NNi, density[i_sigma], sublen/4)

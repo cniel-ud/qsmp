@@ -1,6 +1,5 @@
 import os
 import re
-import glob
 import h5py
 import numpy as np
 import pickle
@@ -116,9 +115,9 @@ def cat_segments(dpath:Path, W, train_len=None):
 
     p = re.compile(FILE_ID_PAT)
 
-    globpath = dpath.joinpath(RX_GLOB)
+    files = dpath.glob(RX_GLOB)
     #XXX: a better way to do this using Path methods?
-    files = glob.glob(globpath)
+    files = [str(f) for f in files]
 
     get_id = make_get_id(p)
     ids = np.array(list(map(get_id, files)), dtype='u2')

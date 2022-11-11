@@ -14,8 +14,11 @@ sig_params = dict(
     pmf_exp=3.1
 )
 freqs = np.array([1, 5, 12, 30, 100, 150])
-sig, freq, freq_cnts, SNRdB = morlet_signal(freqs, **sig_params)
+sig, freq, SNRdB = morlet_signal(freqs, **sig_params)
 plt.plot(sig[13*sig_params['wave_len']:20*sig_params['wave_len']])
+sig_params['SNRdB'] = SNRdB
+sig_params['freq'] = freq
+
 #%% Save data
 root = '/home/cmendoza/software/qsmp/data/morlet'
 fpath = Path(root).joinpath('morlet_signal.npz')
@@ -26,3 +29,5 @@ with fpath.open('wb') as f:
 #%%
 X = MultiTapering(sig, NW=3, sampling=512)
 X.plot()
+
+# %%

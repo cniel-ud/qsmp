@@ -145,21 +145,17 @@ def k_neighborhood(roots, k, NNdist, NNindex, density, gap):
     """
 
     n_roots = roots.size
-    idx = np.zeros(n_roots*(k+1))
+    idx = [None] * n_roots  # np.zeros(n_roots*(k+1))
 
     for i, root in enumerate(roots):
         children = np.asarray(NNindex == root).nonzero()[0]
         children = drop_trivial_matches(children, density, gap)
         n_children = children.size - 1
-        if n_children <= k:
-            isort = np.argsort(NNdist[children])
-            idx[i*(k+1):(i+1)*(k+1)] = np.r_[
-                children[isort], np.full(k-n_children, fill_value=np.nan)]
-        else:
-            ind_topk = np.argpartition(NNdist[children], k+1)[:k+1]
-            children = children[ind_topk]
-            isort = np.argsort(NNdist[children])
-            idx[i*(k+1):(i+1)*(k+1)] = children[isort]
+        _k = min(k, n_children)
+        ind_topk = np.argpartition(NNdist[children], _k)[:_k+1]
+        children = children[ind_topk]
+        isort = np.argsort(NNdist[children])
+        idx[i] = children[isort]
 
     return idx
 

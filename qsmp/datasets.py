@@ -30,4 +30,9 @@ def morlet_signal(
     sig = sig.flatten()
     noise = rng.normal(scale=noise_std, size=wave_len*n_waves)
     sig += noise
-    return sig, freq, freq_cnts
+
+    sig_pow = np.mean(sig**2)
+    noise_pow = np.mean(noise**2)
+    SNRdB = 10 * np.log10(sig_pow / noise_pow)
+
+    return sig, freq, SNRdB

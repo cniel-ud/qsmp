@@ -164,6 +164,39 @@ def k_neighborhood(roots, k, NNdist, NNindex, density, gap):
     return idx
 
 
+def tree2clusters(sublen, density, NNindex, NNdist, max_dist):
+
+    NNindex, NNdist = cut_tree(
+        NNindex, NNdist, max_dist)
+
+    # Assign each subsequence to its root: clustering
+    NNindex = mark_with_root(NNindex)
+
+    # Merge roots that are less than m/4 apart
+    # The densest root wins. Ignore orphan roots.
+    NNindex, modes, cluster_size = merge_roots(
+        NNindex, density, sublen/4)
+
+    return NNdist, NNindex, modes, cluster_size
+
+
+def get_neighbors(
+        T, sublen, density, NNindex, NNdist, modes, max_modes, n_neighbors):
+
+    # Find nearest neighbors
+    idx_list = k_neighborhood(modes[:max_modes],
+                                   n_neighbors, NNdist, NNindex, density, sublen/4)
+
+    # Build sample with modes and
+    # sample[i][0] is the i-th mode, and sample[i][1:] are its neighbors
+    sample = [None] * len(idx_list)
+    for i, idx in enumerate(idx_list):
+        t = idx[:, None] + np.arange(sublen)[None, :]
+        sample[i] = T[t]
+
+    return sample, idx_list
+
+
 def recompute_distances(NNindex, time_series, wave_length):
 
     n_children = NNindex.shape[0]

@@ -6,21 +6,23 @@ from qsmp.utils import utils
 
 def wave_subplots(sample, idx, k):
     n_cols = k + 1
-    max_modes = sample.shape[0]//n_cols
-    fig, ax = plt.subplots(max_modes, n_cols, figsize=(n_cols, max_modes))
+    n_rows = len(sample)
+    fig, ax = plt.subplots(n_rows, n_cols, figsize=(n_cols, n_rows))
     ax = ax.flatten()
-    for i in range(max_modes):
+    for i in range(n_rows):
+        max_cols = len(sample[i])
         for j in range(n_cols):
-            ax[i*n_cols+j].plot(sample[i*n_cols+j])
             ax[i*n_cols+j].axis('off')
-            if ~np.isnan(idx[i*n_cols+j]):
+            if j < max_cols:
+                ax[i*n_cols+j].plot(sample[i][j])
                 ax[i*n_cols +j].set_title(
-                    f'{idx[i*n_cols+j]:.0f}', fontsize=8)
+                        f'{idx[i][j]:.0f}', fontsize=8)
     plt.tight_layout()
 
 
 def wave(sig, shift, centroid_length):
     sample_length = sig.shape[0]
+
     wave = sig[shift:shift + centroid_length]
     lnan, rnan = shift, sample_length - shift - centroid_length
     wave = np.r_[np.full(lnan, np.nan), wave, np.full(rnan, np.nan)]

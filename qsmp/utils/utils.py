@@ -295,7 +295,8 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
     return ind
 
 
-def args2str(args):
+def args2str(args, caller='qsmp'):
+
     sigma_str = [str(i) for i in args.sigma]
     sigma_str = '_'.join(sigma_str)
 
@@ -309,8 +310,15 @@ def args2str(args):
     else:
         tr_str = ''
 
-    name_pat = (
-        f'm-{args.subseq_len}_sigma-{sigma_str}{win_str}'
-        f'{tr_str}_minfilt-{args.minfilt_size}'
-    )
-    return name_pat
+    CALLER2STR = {
+        'qsmp': (
+            f'm-{args.subseq_len}_sigma-{sigma_str}{win_str}'
+            f'{tr_str}_minfilt-{args.minfilt_size}'
+        ),
+        'report': (
+            f'modes-{args.max_modes}_neigh-{args.n_neighbors}{win_str}'
+            f'{tr_str}_minfilt-{args.minfilt_size}.pdf'
+        )
+    }
+
+    return CALLER2STR[caller]

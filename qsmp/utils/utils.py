@@ -298,27 +298,31 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
 class Args2Filename:
     def __init__(self, args) -> None:
 
-        self.base_name = self._basename(args)
+        self.args = args
+        self.base_name = self._basename()
 
-    def _basename(self, args):
-        sigma_str = [str(i) for i in args.sigma]
+    def _basename(self):
+        sigma_str = [str(i) for i in self.args.sigma]
         sigma_str = '_'.join(sigma_str)
 
-        if args.window_type is not None:
-            win_str = f'_{args.window_type}-{int(100*args.window_support)}'
+        if self.args.window_type is not None:
+            win_str = (
+                f'_{self.args.window_type}-'
+                f'{int(100*self.args.window_support)}'
+            )
         else:
             win_str = ''
 
-        if args.transform is not None:
-            tr_str = f'_{args.transform}'
+        if self.args.transform is not None:
+            tr_str = f'_{self.args.transform}'
         else:
             tr_str = ''
 
-        self.base_name = (
-            f'm-{args.subseq_len}_sigma-{sigma_str}{win_str}'
-            f'{tr_str}_minfilt-{args.minfilt_size}'
+        return (
+            f'm-{self.args.subseq_len}_sigma-{sigma_str}{win_str}'
+            f'{tr_str}_minfilt-{self.args.minfilt_size}'
         )
-        self.args = args
+
 
     def _qsmp(self):
         return (

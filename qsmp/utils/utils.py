@@ -295,30 +295,44 @@ def phase_correction(ind, end_seg, grp_delay, direction='backward'):
     return ind
 
 
-def args2str(args, caller='qsmp'):
+class Args2Filename:
+    def __init__(self, args) -> None:
 
-    sigma_str = [str(i) for i in args.sigma]
-    sigma_str = '_'.join(sigma_str)
+        self.base_name = self._basename(args)
 
-    if args.window_type is not None:
-        win_str = f'_{args.window_type}-{int(100*args.window_support)}'
-    else:
-        win_str = ''
+    def _basename(self, args):
+        sigma_str = [str(i) for i in args.sigma]
+        sigma_str = '_'.join(sigma_str)
 
-    if args.transform is not None:
-        tr_str = f'_{args.transform}'
-    else:
-        tr_str = ''
+        if args.window_type is not None:
+            win_str = f'_{args.window_type}-{int(100*args.window_support)}'
+        else:
+            win_str = ''
 
-    CALLER2STR = {
-        'qsmp': (
+        if args.transform is not None:
+            tr_str = f'_{args.transform}'
+        else:
+            tr_str = ''
+
+        self.base_name = (
             f'm-{args.subseq_len}_sigma-{sigma_str}{win_str}'
             f'{tr_str}_minfilt-{args.minfilt_size}'
-        ),
-        'report': (
-            f'modes-{args.max_modes}_neigh-{args.n_neighbors}{win_str}'
-            f'{tr_str}_minfilt-{args.minfilt_size}.pdf'
         )
-    }
+        self.args = args
 
-    return CALLER2STR[caller]
+    def _qsmp(self):
+        return (
+            f'qsmp_{self.base_name}.npz'
+        )
+
+    def _report(self):
+        return (
+            f'modes-{self.args.max_modes}_neigh-'
+            f'{self.args.n_neighbors}_{self.base_name}.pdf'
+        )
+
+    def __call__(self, caller):
+        fn_name = f'_{caller}'
+        fn = getattr(self, fn_name)
+
+        return fn()

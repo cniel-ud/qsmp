@@ -32,8 +32,8 @@ img_dir.mkdir(exist_ok=True)
 data_dir = root.joinpath('data', args.experiment)
 results_dir = root.joinpath('results', args.experiment)
 
-params_str = utils.args2str(args)
-in_fname = f'qsmp_{params_str}.npz'
+args2filename = utils.Args2Filename(args)
+in_fname = args2filename('qsmp')
 in_file = results_dir.joinpath(in_fname)
 with np.load(in_file) as data:
     density = data['density'].T
@@ -48,7 +48,7 @@ with np.load(fpath, allow_pickle=True) as data:
     T = data['T']
     splice = data['splice']
 
-out_fname = utils.args2str(args, caller='report')
+out_fname = args2filename('report')
 out_path = img_dir.joinpath(out_fname)
 with PdfPages(out_path) as pdf:
     for i_sigma in range(len(args.sigma)):

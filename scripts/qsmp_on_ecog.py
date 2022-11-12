@@ -68,8 +68,9 @@ if __name__ == '__main__':
 
     # No need to include 'preictal ('interictal'), as they are in separate
     # folders (dpath)
-    params_str = utils.args2str(args)
-    out_file = f'qsmp_{params_str}.npz'
+    args2filename = utils.Args2Filename(args)
+    out_file = args2filename('qsmp')
+    params_str = args2filename.base_name
 
     #XXX: make a more generic (parametrized) name
     if transform == 'whiten':

@@ -10,8 +10,6 @@ import qsmp.utils.utils as utils
 from qsmp.utils import windows
 
 from time import perf_counter
-
-
 t_start = perf_counter()
 
 # Parse command-line arguments
@@ -43,54 +41,37 @@ results_dir.mkdir(exist_ok=True)
 device_ids = [device.id for device in numba.cuda.list_devices()]
 device_ids = [device_ids[0]]  # Use only one GPU
 
-# The Gaussian kernel is of the form
-#   f(x) = exp(-x^2/(2*sigma^2))
-#   with `sigma` being the bandwidth parameter
-sigma = np.array(sigma)
-sigma_str = [str(i) for i in sigma]
-sigma_str = '_'.join(sigma_str)
+
 
 
 # (Gaussian/Rect) window to penalize patterns that are not centered
 if args.window_type is not None:
     win_fn = windows.get_window(args.window_type)
     win = win_fn(sublen, win_support)
-    win_str = f'_{args.window_type}-{int(100*win_support)}'
 else:
     win = None
-    win_str = ''
 
-#XXX: we are currently taking the first segments whose cumulative length
-# is >= args.train. This parameter is NOT currently reflected in the naming
-# of the output files.
-fnames = {
-    'time series': 'morlet_signal_fs-512.txt'
-}
+T_splice_file = 'morlet_signal.npz'
+args2filename = utils.Args2Filename(args)
+out_file = args2filename('qsmp')
 
-if transform is not None:
-    tr_str = f'_{transform}'
-else:
-    tr_str = ''
-fnames['Qtuple'] = (
-    f'qsmp_m{sublen}_sigma{sigma_str}{win_str}'
-    f'{tr_str}minfilt-{minfilt_size}.npz'
-)
-
-fpath = data_dir.joinpath(fnames['time series'])
-T = np.loadtxt(fpath)
+T_splice_file = data_dir.joinpath(T_splice_file)
+with np.load(T_splice_file, allow_pickle=True) as data:
+    T = data['T']
+    splice = data['splice']
 
 compute_density = True
-fpath = results_dir.joinpath(fnames['Qtuple'])
-if fpath.is_file():
-    with np.load(fpath) as data:
+out_file = results_dir.joinpath(out_file)
+if out_file.is_file():
+    with np.load(out_file) as data:
         if 'density' in data:
             density = data['density']
             T = data['T']
             splice = data['splice']
             compute_density = False
         else:
-            print(f'{fpath} is corrupted.\nDeleting it...')
-            os.remove(fpath)
+            print(f'{out_file} is corrupted.\nDeleting it...')
+            os.remove(out_file)
 
 # Compute and save density
 if compute_density:
@@ -98,8 +79,7 @@ if compute_density:
         T, sublen, sigma, root, transform=transform,
         splice=None, window=win, device_id=device_ids
     )
-    fpath = results_dir.joinpath(fnames['Qtuple'])
-    with fpath.open('wb') as f:
+    with out_file.open('wb') as f:
         np.savez(f, density=density, T=T, splice=splice)
 
 # Compute QSMP and indices
@@ -112,7 +92,7 @@ profile, indices, density = utils.fix_root((profile, indices, density))
 
 # Save density, QSMP, and indices. np.savez doesn't work in append mode.
 #XXX: Save splice?
-fpath = results_dir.joinpath(fnames['Qtuple'])
+fpath = results_dir.joinpath(out_file)
 with fpath.open('wb') as f:
     np.savez(
         f, density=density, profile=profile, indices=indices,

@@ -56,4 +56,36 @@ def show_modes_across_maxdist(
             ax[i,j].remove()
 
     plt.suptitle('Modes across different distance thresholds')
-    plt.tight_layout()
+
+
+def show_modes_across_sigma(
+    T, wave_len, density, NNindex,
+    NNdist, max_dist=0, sigmas=[0], max_modes=10, n_neighbors=9, show_neighbors=False,
+):
+
+    n_sigma = len(sigmas)
+    fig, ax = plt.subplots(max_modes, n_sigma, figsize=(n_sigma, max_modes))
+
+    for j, sigma in enumerate(sigmas):
+        NNd, NNi, modes, cluster_size = tree.tree2clusters(
+            wave_len, density[j], NNindex[j],
+            NNdist[j], max_dist
+        )
+
+        sample, idx = tree.get_neighbors(
+            T, wave_len, density[j], NNi,
+            NNd, modes, max_modes, n_neighbors
+        )
+        n_modes = len(sample)
+        for i in range(n_modes):
+            ax[i, j].axis('off')
+            ax[i, j].plot(sample[i][0])
+            if show_neighbors:
+                ax[i, j].plot(sample[i][1:].T)
+            if i == 0:
+                ax[i, j].set_title(f'{sigma:.2f}')
+
+        for i in range(n_modes, max_modes):
+            ax[i, j].remove()
+
+    plt.suptitle('Modes across different sigma values')

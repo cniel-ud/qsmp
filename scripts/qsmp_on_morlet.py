@@ -27,13 +27,9 @@ parser.add_argument('--transform', default=None)
 
 args = parser.parse_args()
 
-root = Path(args.root)
-sublen = args.subseq_len
-minfilt_size = args.minfilt_size
-sigma = args.sigma
-win_support = args.window_support
-transform = args.transform
+sigma = np.array(args.sigma)
 
+root = Path(args.root)
 data_dir = root.joinpath('data/morlet')
 results_dir = root.joinpath('results/morlet')
 results_dir.mkdir(exist_ok=True)
@@ -41,18 +37,16 @@ results_dir.mkdir(exist_ok=True)
 device_ids = [device.id for device in numba.cuda.list_devices()]
 device_ids = [device_ids[0]]  # Use only one GPU
 
-
-
-
 # (Gaussian/Rect) window to penalize patterns that are not centered
 if args.window_type is not None:
     win_fn = windows.get_window(args.window_type)
-    win = win_fn(sublen, win_support)
+    win = win_fn(args.subseq_len, args.window_support)
 else:
     win = None
 
 T_splice_file = 'morlet_signal.npz'
 args2filename = utils.Args2Filename(args)
+params_str = args2filename.base_name
 out_file = args2filename('qsmp')
 
 T_splice_file = data_dir.joinpath(T_splice_file)
@@ -76,7 +70,7 @@ if out_file.is_file():
 # Compute and save density
 if compute_density:
     T, splice, density = gpu_density(
-        T, sublen, sigma, root, transform=transform,
+        T, args.subseq_len, sigma, root, params_str, transform=args.transform,
         splice=None, window=win, device_id=device_ids
     )
     with out_file.open('wb') as f:
@@ -84,7 +78,7 @@ if compute_density:
 
 # Compute QSMP and indices
 profile, indices = gpu_qsmp(
-    T, sublen, minfilt_size, density, root, splice=splice, device_id=device_ids
+    T, args.subseq_len, args.minfilt_size, density, root, params_str, splice=splice, device_id=device_ids
 )
 
 # Find global maxima (root), and fix neighbor and profile
@@ -92,8 +86,7 @@ profile, indices, density = utils.fix_root((profile, indices, density))
 
 # Save density, QSMP, and indices. np.savez doesn't work in append mode.
 #XXX: Save splice?
-fpath = results_dir.joinpath(out_file)
-with fpath.open('wb') as f:
+with out_file.open('wb') as f:
     np.savez(
         f, density=density, profile=profile, indices=indices,
         T=T, splice=splice

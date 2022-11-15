@@ -41,9 +41,9 @@ with np.load(in_file) as data:
     NNindex = data['indices'].T
 
 # TODO:
-# * Extend to multiple data files
+# * Extend to multiple data files (?)
 # * Use HDF5 to improve portability
-fpath = next(iter(data_dir.iterdir()))
+fpath = list(data_dir.glob('*.npz'))[0]
 with np.load(fpath, allow_pickle=True) as data:
     T = data['T']
     splice = data['splice']
@@ -56,7 +56,7 @@ with PdfPages(out_path) as pdf:
         if np.all(NNdist[i_sigma]==0.0):
             continue
 
-        quantiles = np.quantile(NNdist[i_sigma], [0.5, 0.99])
+        quantiles = np.quantile(NNdist[i_sigma], [0.1, 1])
         quantiles = np.log2(quantiles)
         maxdists = 2 ** np.linspace(*quantiles, 5)
 

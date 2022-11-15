@@ -10,8 +10,8 @@ t_start = perf_counter()
 
 # Parse command-line arguments
 parser = ArgumentParser()
-parser.add_argument("-d", "--data-path", dest="dpath",
-                    help="Path to folder with time series")
+parser.add_argument('experiment', help='Experiment name')
+parser.add_argument("--root", help="Path to root folder")
 parser.add_argument("--centroid-len", type=int, default=512,
                     help="Centroid length")
 parser.add_argument("--window-len", type=int, default=768,
@@ -21,13 +21,16 @@ parser.add_argument('--num-clusters', type=int,
 
 args = parser.parse_args()
 win_len = args.window_len
-dpath = Path(args.dpath)
+root = Path(args.root)
+data_dir = root.joinpath('data', args.experiment)
+results_dir = root.joinpath('results', args.experiment)
+data_dir.mkdir(exist_ok=True)
+results_dir.mkdir(exist_ok=True)
 
-in_file = dpath.joinpath('qsmp_T_splice.npz')
-with np.load(in_file) as data:
+fpath = list(data_dir.glob('*.npz'))[0]
+with np.load(fpath) as data:
     T = data['T']
     splice = data['splice']
-
 
 tot_win = np.sum(np.diff(np.r_[0, splice, T.size])//win_len)
 X = np.zeros((tot_win, win_len))
@@ -44,13 +47,13 @@ for start, end in zip(start_arr, end_arr):
 
 k, P = args.num_clusters, args.centroid_len
 metric, init = 'cosine', 'random'
-n_runs, rng = 3, 13
+n_runs, rng = 30, 13
 centroids, labels, shifts, distances, _, _ = shift_invariant_k_means(
     X, k, P, metric=metric, init=init, n_init=n_runs, rng=rng,  verbose=True)
 
 
 out_file = f'sikmeans_k-{k}_P-{P}_wlen-{win_len}.npz'
-out_file = dpath.joinpath(out_file)
+out_file = results_dir.joinpath(out_file)
 with out_file.open('wb') as f:
     np.savez(f, centroids=centroids, labels=labels,
              shifts=shifts, distances=distances)

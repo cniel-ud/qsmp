@@ -24,7 +24,7 @@ root = '/home/cmendoza/software/qsmp/data/morlet'
 fpath = Path(root).joinpath('morlet_signal.npz')
 with fpath.open('wb') as f:
     np.savez(
-        f, T=sig, splice=None, **sig_params
+        f, T=sig, splice=np.full(0,0), **sig_params
     )
 #%%
 X = MultiTapering(sig, NW=3, sampling=512)

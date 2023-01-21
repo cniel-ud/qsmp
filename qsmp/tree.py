@@ -86,6 +86,10 @@ def merge_roots(roots, density, gap):
     unique_roots = unique_roots[num_nodes > 1] #ignore orphan roots
     ind = ind[num_nodes > 1]
     num_nodes = num_nodes[num_nodes > 1]
+
+    if unique_roots.size == 0:
+        return roots, np.full(0, 0), np.full(0, 0)
+
     start_arr = np.asarray(
         np.r_[True, np.diff(unique_roots) > gap]).nonzero()[0]
     end_arr = np.r_[start_arr[1:], unique_roots.size]
@@ -99,7 +103,7 @@ def merge_roots(roots, density, gap):
         imax = np.argmax(density[unique_roots[start:end]])
         winning_roots[i] = unique_roots[start + imax]
         idx = utils.where_equal(roots_sorted, unique_roots[start:end])
-        roots[isort[idx]] = winning_roots[i]
+        roots[isort[idx]] = winning_roots[i]  #XXX: in-place bug?
         tree_size[i] = np.sum(num_nodes[start:end])
 
     isort = np.argsort(-density[winning_roots])

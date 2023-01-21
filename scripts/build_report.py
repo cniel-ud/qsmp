@@ -67,6 +67,9 @@ with PdfPages(out_path) as pdf:
                 NNdist[i_sigma], max_dist
             )
 
+            if modes.size == 0: # every point points to itself
+                continue
+
             sample, idx = tree.get_neighbors(
                 T, args.subseq_len, density[i_sigma], NNi,
                 NNd, modes, args.max_modes, args.n_neighbors

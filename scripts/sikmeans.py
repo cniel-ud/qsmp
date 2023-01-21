@@ -28,7 +28,7 @@ data_dir.mkdir(exist_ok=True)
 results_dir.mkdir(exist_ok=True)
 
 fpath = list(data_dir.glob('*.npz'))[0]
-with np.load(fpath) as data:
+with np.load(fpath, allow_pickle=True) as data:
     T = data['T']
     splice = data['splice']
 

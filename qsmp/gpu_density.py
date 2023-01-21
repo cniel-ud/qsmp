@@ -136,9 +136,6 @@ def _compute_and_update_density_kernel(
         if (i <= zone_stop and i >= zone_start) or is_in_splice:
             D = np.inf
 
-        # if start == 1263: #XXX: Debugging..
-        #     set_trace()
-
         if centeredness.size > 0:
             D = D / centeredness[j]
             if fwhm.size > 0 and centeredness[j] < max(fwhm[j], fwhm[i]):
@@ -600,13 +597,14 @@ def gpu_density(T, m, sigma, dpath, params_str, transform=None,
         # asumme densities are columns in density[i]
         density[0] = np.sum(density, axis=0)
 
-    density[0][density[0] < config.QSMP_DENSITY_THRESHOLD] = 0
+    density = density[0]
+    density[density < config.QSMP_DENSITY_THRESHOLD] = 0
 
     threshold = 10e-6
-    if core.are_distances_too_small(density[0], threshold=threshold):  # pragma: no cover
+    if core.are_distances_too_small(density, threshold=threshold):  # pragma: no cover
         logger.warning(f"A large number of values are smaller than {threshold}.")
 
     if transform == 'whiten':
-        return T, splice, density[0], grp_delay
+        return T, splice, density, grp_delay
     else:
-        return T, splice, density[0]
+        return T, splice, density

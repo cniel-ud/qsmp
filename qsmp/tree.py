@@ -238,3 +238,36 @@ def recompute_distances(NNindex, time_series, wave_length):
             NNdist[children_idx] = np.sqrt(sq_dist)
 
     return NNdist
+
+
+def find_tau(k, subseq_len, density, NNindex, NNdist):
+    max_tau = np.max(NNdist)
+    min_tau = np.min(NNdist[NNdist > 0])
+    step = (max_tau - min_tau)/2
+    tau = min_tau + step
+    prev_left = min_tau
+    prev_right = max_tau
+    while True:
+        NNd, NNi, modes, cluster_size = tree2clusters(
+            subseq_len, density, NNindex, NNdist, tau)
+        n_modes = modes.size
+        # For S0599_V1m_S0573_V3m_2_9000_1000.txt, from the MixedBag dataset,
+        # with m=500, there is no tau that yields exactly 2 modes. It jumps
+        # from 1 to 3. So, exit if step becomes too small.
+        if step < 1e-5:
+            return None
+        if n_modes == k:
+            break
+        elif n_modes > k:
+            step = (prev_right - tau)/2
+            prev_left = tau
+            tau = tau + step
+            if max_tau - tau < 1e-5:
+                return None
+        else:
+            step = (tau - prev_left)/2
+            prev_right = tau
+            tau = tau - step
+            if tau - min_tau < 1e-5:
+                return None
+    return tau

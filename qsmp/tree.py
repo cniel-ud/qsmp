@@ -114,7 +114,31 @@ def merge_roots(roots, density, gap):
 
 
 def drop_trivial_matches(nodes, density, gap):
+    """Within ``nodes``, keep only the highest-density representative of each
+    temporally-contiguous group.
 
+    Two nodes are considered to belong to the same group if their start
+    indices are within ``gap`` samples. Inside a group, the node with the
+    largest density is kept and the rest are dropped. This is used by
+    :func:`k_neighborhood` to avoid returning multiple shifted copies of the
+    same waveform as the "neighbors" of a mode.
+
+    Parameters
+    ----------
+    nodes : numpy.ndarray
+        1D integer array of node (subsequence start) indices.
+    density : numpy.ndarray
+        Density estimate evaluated at every node (only ``density[nodes]`` is
+        used here, but the full array is passed for indexing convenience).
+    gap : int
+        Minimum temporal separation between retained nodes, in samples. The
+        paper's exclusion zone of ``m/4`` is the typical value.
+
+    Returns
+    -------
+    winning_nodes : numpy.ndarray
+        Sorted, deduplicated subset of ``nodes``.
+    """
     nodes = np.sort(nodes)
     start_arr = np.asarray(
         np.r_[True, np.diff(nodes) > gap]).nonzero()[0]
@@ -165,7 +189,56 @@ def k_neighborhood(roots, k, NNdist, NNindex, density, gap):
 
 
 def tree2clusters(sublen, density, NNindex, NNdist, max_dist):
+    """Cut the QSMP tree at ``max_dist`` and return the resulting clustering.
 
+    Convenience wrapper that chains :func:`cut_tree` (cut edges longer than
+    ``max_dist`` to convert the tree into a forest), :func:`mark_with_root`
+    (label every node with the index of its root), and :func:`merge_roots`
+    (merge roots that are within ``sublen/4`` samples of each other, keeping
+    the densest one).
+
+    Parameters
+    ----------
+    sublen : int
+        Subsequence length ``m``. The exclusion-zone half-width
+        ``sublen/4`` is used as the gap parameter for ``merge_roots``,
+        matching the paper's exclusion zone (Definition 5 of [1]).
+    density : numpy.ndarray
+        Density estimate, shape ``(N,)`` (one of the columns of the QS-tuple
+        if multiple kernel widths were used).
+    NNindex : numpy.ndarray
+        NN-index, shape ``(N,)``. ``NNindex[i]`` is the index of the
+        higher-density nearest neighbor of subsequence ``i``.
+    NNdist : numpy.ndarray
+        NN-distance, shape ``(N,)``. ``NNdist[i]`` is the (shift-invariant)
+        distance between subsequence ``i`` and its nearest higher-density
+        neighbor.
+    max_dist : float
+        Distance threshold ``tau``. Edges longer than ``max_dist`` are cut.
+
+    Returns
+    -------
+    NNdist : numpy.ndarray
+        Per-node distances after the cut (root nodes have distance 0).
+    NNindex : numpy.ndarray
+        Per-node root indices.
+    modes : numpy.ndarray
+        Indices of the surviving roots, ordered by descending density.
+    cluster_size : numpy.ndarray
+        Number of subsequences in each cluster, in the same order as
+        ``modes``.
+
+    See Also
+    --------
+    find_tau : Binary-search the value of ``max_dist`` that yields exactly
+        ``k`` modes.
+
+    References
+    ----------
+    .. [1] Mendoza-Cardenas & Brockmeier, *QSMP: finding representative time
+       series subsequences through Quick Shift + Matrix Profile* (under
+       resubmission).
+    """
     NNindex, NNdist = cut_tree(
         NNindex, NNdist, max_dist)
 
@@ -182,7 +255,40 @@ def tree2clusters(sublen, density, NNindex, NNdist, max_dist):
 
 def get_neighbors(
         T, sublen, density, NNindex, NNdist, modes, max_modes, n_neighbors):
+    """Extract the actual subsequence values for the top modes and their
+    neighbors.
 
+    For each of the first ``max_modes`` entries of ``modes``, this looks up
+    its ``n_neighbors`` nearest non-trivial children in the QS forest and
+    materialises the time-series segments (the *waveforms*) at those start
+    indices. Used by the reporting and visualisation utilities.
+
+    Parameters
+    ----------
+    T : numpy.ndarray
+        The 1D time series (used to slice waveforms out of).
+    sublen : int
+        Subsequence length ``m``.
+    density, NNindex, NNdist : numpy.ndarray
+        The per-sigma columns of the QS-tuple (see :func:`tree2clusters`).
+    modes : numpy.ndarray
+        Mode (root) indices, ordered by descending density (typically the
+        output of :func:`tree2clusters`).
+    max_modes : int
+        How many of the leading modes to return waveforms for.
+    n_neighbors : int
+        How many nearest neighbors to extract per mode.
+
+    Returns
+    -------
+    sample : list of numpy.ndarray
+        ``sample[i]`` is a 2D array of shape
+        ``(n_neighbors_i + 1, sublen)`` whose first row is the ``i``-th mode
+        and the remaining rows are its nearest neighbors.
+    idx_list : list of numpy.ndarray
+        ``idx_list[i]`` are the start indices in ``T`` corresponding to
+        ``sample[i]``.
+    """
     # Find nearest neighbors
     idx_list = k_neighborhood(modes[:max_modes],
                                    n_neighbors, NNdist, NNindex, density, sublen/4)
@@ -198,7 +304,36 @@ def get_neighbors(
 
 
 def recompute_distances(NNindex, time_series, wave_length):
+    """Recompute z-normalised Euclidean distances between every node and its
+    cluster root, on raw (non-shift-invariant) waveforms.
 
+    The QSMP NN-distances stored in ``profile`` are *shift-invariant*: each
+    one is the minimum of a window of length ``B`` around the actual nearest
+    neighbour (see Eq. 7 of the paper). This function replaces them with
+    plain z-normalised Euclidean distances between each subsequence and the
+    root of its cluster, which can be useful for sanity-checking or
+    distortion-style metrics.
+
+    The implementation chunks the per-cluster batched matmul to keep memory
+    use under ``1 GiB`` per chunk; tune ``max_chunk_size`` in the source if
+    needed.
+
+    Parameters
+    ----------
+    NNindex : numpy.ndarray
+        Per-node root indices, one entry per subsequence (typically the
+        output of :func:`tree2clusters`).
+    time_series : numpy.ndarray
+        The 1D time series ``T``.
+    wave_length : int
+        Subsequence length ``m``.
+
+    Returns
+    -------
+    NNdist : numpy.ndarray
+        Per-node distance to the cluster root, shape
+        ``(NNindex.shape[0],)``.
+    """
     n_children = NNindex.shape[0]
     NNdist = np.zeros(n_children)
 
@@ -245,6 +380,37 @@ def recompute_distances(NNindex, time_series, wave_length):
 
 
 def find_tau(k, subseq_len, density, NNindex, NNdist):
+    """Binary-search the distance threshold that yields exactly ``k`` modes.
+
+    Implements the binary search over ``tau`` mentioned in §3.2 of the
+    paper. For a fixed kernel width, the number of modes is a non-increasing
+    step function of ``tau``: large ``tau`` yields few clusters, small
+    ``tau`` over-segments the tree. This function bisects ``[min_tau,
+    max_tau]`` (where ``min_tau`` is the smallest non-zero NN-distance and
+    ``max_tau`` is the largest) until :func:`tree2clusters` returns exactly
+    ``k`` modes.
+
+    Some time series have no ``tau`` that gives an exact ``k``-mode
+    clustering (e.g. the count jumps from 1 to 3 as ``tau`` decreases).
+    In that case the function gives up and returns ``None`` once the
+    bisection step shrinks below ``1e-5``.
+
+    Parameters
+    ----------
+    k : int
+        Desired number of modes.
+    subseq_len : int
+        Subsequence length ``m`` (forwarded to :func:`tree2clusters`).
+    density, NNindex, NNdist : numpy.ndarray
+        Per-sigma columns of the QS-tuple (see :func:`tree2clusters`).
+
+    Returns
+    -------
+    tau : float or None
+        A distance threshold such that
+        ``tree2clusters(..., tau)`` returns exactly ``k`` modes, or ``None``
+        if no such threshold exists in the searched range.
+    """
     max_tau = np.max(NNdist)
     min_tau = np.min(NNdist[NNdist > 0])
     step = (max_tau - min_tau)/2

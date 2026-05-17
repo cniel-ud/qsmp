@@ -197,6 +197,29 @@ def splitdata(X, chunk_size, keep_dims=True):
 
 
 def fix_root(qsmp):
+    """Make global density maxima self-rooting in the QS-tuple.
+
+    The CUDA kernel in :mod:`qsmp.gpu_qsmp` only assigns an NN-index to
+    subsequences that have a higher-density neighbour somewhere else in the
+    series. The global density maximum (or any tied tip of the tree) has no
+    such neighbour, so its profile entry is left at ``np.inf`` and its index
+    at ``-1``. This function rewrites those entries so the global mode
+    points to itself with distance zero, i.e. the convention expected by
+    :mod:`qsmp.tree`.
+
+    Parameters
+    ----------
+    qsmp : tuple
+        ``(profile, neighbor, density)`` triple as returned by
+        :func:`qsmp.gpu_qsmp.gpu_qsmp` and :func:`qsmp.gpu_density.gpu_density`.
+        Each is shape ``(N, n_sigma)``. **Modified in place**.
+
+    Returns
+    -------
+    profile, neighbor, density : numpy.ndarray
+        The same arrays, with self-loops installed at the global density
+        maxima.
+    """
     profile, neighbor, density = qsmp
     n_bw = profile.shape[1]
     for i_bw in np.arange(n_bw):

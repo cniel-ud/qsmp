@@ -46,7 +46,8 @@ qsmp/
 │       └── qsmp_T_splice.npz  # Preprocessed preictal time series (CSP-filtered, spliced)
 ├── docs/
 │   ├── REPRODUCING.md         # Step-by-step reproduction of the paper experiments
-│   └── USAGE.md               # Running QSMP on new data + output format reference
+│   ├── USAGE.md               # Running QSMP on new data + output format reference
+│   └── KNOWN_ISSUES.md        # Compatibility breakages and cleanup TODOs
 ├── requirements.txt
 ├── pyproject.toml
 └── README.md
@@ -61,7 +62,7 @@ post-processing:
 
 - An NVIDIA GPU (the original experiments were run on UD's HPC cluster under SLURM)
 - **CUDA Toolkit 11.x** (matching `cupy==11.2.0`)
-- Python **3.10**
+- Python **3.9.13** (the version used for the original submission)
 
 > **Note on CPU-only use.** The library code is importable on a CPU-only
 > machine (macOS, Linux, Windows) and the synthetic-data generator
@@ -76,7 +77,7 @@ We recommended using [uv](https://docs.astral.sh/uv/) for fast environment + pac
 management.
 
 ```sh
-uv venv --python 3.10
+uv venv --python 3.9.13
 source .venv/bin/activate
 uv pip install -r requirements.txt
 uv pip install -e .
@@ -84,11 +85,10 @@ uv pip install -e .
 
 > **Heads-up on `requirements.txt`.** The pins
 > (`numpy==1.17.4`, `cupy==11.2.0`, `numba==0.56.4`, etc.) reflect the
-> environment used for the original submission and may not all install
-> cleanly on Python 3.10. If you hit conflicts, the modern equivalents that
-> have been verified to import the library are: `numpy>=1.26`, `numba>=0.61`,
-> `scipy>=1.11`, `h5py>=3.16`, plus `cupy-cuda11x` matching your CUDA
-> toolkit. A pin refresh is on the to-do list.
+> environment used for the original submission. If you want to use a more
+> recent Python (3.10+), see [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)
+> for the working modern alternatives that have been verified to import the
+> library.
 
 ## Reproducing the paper
 

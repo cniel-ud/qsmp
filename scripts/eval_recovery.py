@@ -177,8 +177,8 @@ def main():
                 win = windows.get_window(args.window_type)(m, args.window_support)
             else:
                 win = None
-            import numba
-            device_ids = [d.id for d in numba.cuda.list_devices()][:1]
+            from numba import cuda
+            device_ids = [d.id for d in cuda.list_devices()][:1]
             params_str = f"recovery_seed-{args.seed}"
             protos, info = run_qsmp(T, splice, m, sigma, args.minfilt_size,
                                     args.k, root, params_str, win, device_ids)

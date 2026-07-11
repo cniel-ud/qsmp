@@ -74,8 +74,14 @@ def run_qsmp(T, splice, m, sigma, minfilt, k, root, params_str, window,
     profile_T = np.atleast_2d(profile.T)
 
     # For each sigma, binary-search tau for exactly k modes; among the sigmas
-    # that succeed, keep the one whose k modes have the smallest total NN-distance
-    # (the data-driven, ground-truth-free tie-break from the KDD rebuttal).
+    # that succeed, keep the one whose k modes are the most mutually DISTINCT,
+    # i.e. that maximises the minimum pairwise shift-invariant distance between
+    # modes. This is an unsupervised (ground-truth-free) criterion that encodes
+    # QSMP's actual goal -- k *distinct* representatives. It deliberately
+    # replaces the older "smallest total NN-distance" tie-break, which rewards
+    # tight (hence redundant) clusters and so prefers a sigma whose k modes
+    # collapse onto the few most-prevalent frequencies.
+    max_lag = m // 4
     best = None
     for si in range(sigma.size):
         dens_i, ind_i, prof_i = density_T[si], indices_T[si], profile_T[si]
@@ -88,25 +94,27 @@ def run_qsmp(T, splice, m, sigma, minfilt, k, root, params_str, window,
                                                      tau)
         if modes.size != k:
             continue
-        score = float(np.sum(NNd[NNi != np.arange(NNi.size)]))
-        if best is None or score < best["score"]:
+        mode_waves = utils.get_waves(np.sort(modes).astype(np.int64), T, m)
+        D = em._pairwise_si_dist(mode_waves, mode_waves, max_lag)
+        # minimum distance between two distinct modes (ignore the zero diagonal)
+        iu = np.triu_indices(k, k=1)
+        diversity = float(D[iu].min()) if iu[0].size else 0.0
+        if best is None or diversity > best["diversity"]:
             best = dict(sigma=float(sigma[si]), tau=float(tau), modes=modes,
-                        score=score)
+                        diversity=diversity)
 
     if best is None:
         return np.empty((0, m)), dict(sigma=None, tau=None, t_qsmp=t_qsmp,
-                                      n_modes=0)
+                                      n_modes=0, diversity=None)
 
     protos = utils.get_waves(np.sort(best["modes"]).astype(np.int64), T, m)
     return protos, dict(sigma=best["sigma"], tau=best["tau"], t_qsmp=t_qsmp,
-                        n_modes=int(best["modes"].size))
+                        n_modes=int(best["modes"].size),
+                        diversity=best["diversity"])
 
 
-def run_sikmeans(T, splice, m, k, win_len, n_runs=30, seed=13):
-    """Run sikmeans, return its ``k`` centroids as prototypes ``(k, m)``."""
-    from qsmp.shift_kmeans.shift_kmeans import shift_invariant_k_means
-
-    t0 = perf_counter()
+def _sikmeans_windows(T, splice, win_len):
+    """Slice ``T`` into non-overlapping windows of length ``win_len``."""
     start_arr = np.r_[0, splice] if splice.size else np.r_[0]
     end_arr = np.r_[splice, T.size] if splice.size else np.r_[T.size]
     tot_win = int(np.sum((end_arr - start_arr) // win_len))
@@ -119,10 +127,46 @@ def run_sikmeans(T, splice, m, k, win_len, n_runs=30, seed=13):
             np.arange(win_len)[None, :]
         X[sx:sx + n_win] = seg[idx]
         sx += n_win
-    centroids, labels, shifts, distances, _, _ = shift_invariant_k_means(
-        X, k, m, metric="cosine", init="random", n_init=n_runs, rng=seed,
-        verbose=False)
-    return np.asarray(centroids), dict(t_sikmeans=perf_counter() - t0)
+    return X
+
+
+def run_sikmeans(T, splice, m, k, win_lens, n_runs=30, seed=13):
+    """Run sikmeans, return its ``k`` centroids as prototypes ``(k, m)``.
+
+    ``win_lens`` is the grid of non-overlapping window lengths to try. For each
+    window length sikmeans is run (``n_init`` restarts) and the one with the
+    smallest clustering distortion (``inertia``) is kept -- an unsupervised,
+    ground-truth-free selection mirroring how QSMP picks ``sigma`` and
+    Snippet-Finder picks ``percentage``. Comparing inertia across window lengths
+    is fair here because ``metric='cosine'`` and every window is z-normalised,
+    so the per-sample distance is bounded the same way regardless of ``win_len``.
+    """
+    from qsmp.shift_kmeans.shift_kmeans import shift_invariant_k_means
+
+    t0 = perf_counter()
+    best = None
+    for win_len in np.atleast_1d(win_lens).astype(int):
+        if win_len < m:                # window must fit a centroid of length m
+            continue
+        X = _sikmeans_windows(T, splice, win_len)
+        if X.shape[0] < k:             # too few windows to form k clusters
+            continue
+        centroids, labels, shifts, distances, inertia, _ = \
+            shift_invariant_k_means(
+                X, k, m, metric="cosine", init="random", n_init=n_runs,
+                rng=seed, verbose=False)
+        # Mean per-window distortion, comparable across window counts.
+        distortion = float(inertia) / X.shape[0]
+        if best is None or distortion < best["distortion"]:
+            best = dict(centroids=np.asarray(centroids), win_len=int(win_len),
+                        distortion=distortion)
+
+    if best is None:
+        return np.empty((0, m)), dict(t_sikmeans=perf_counter() - t0,
+                                      win_len=None, distortion=None)
+    return best["centroids"], dict(t_sikmeans=perf_counter() - t0,
+                                   win_len=best["win_len"],
+                                   distortion=best["distortion"])
 
 
 def main():
@@ -131,11 +175,17 @@ def main():
     p.add_argument("--seed", type=int, required=True,
                    help="Random seed for this dataset instance")
     p.add_argument("--subseq-len", type=int, default=512)
-    p.add_argument("--sigma", type=float, nargs="*", default=[0.9, 1.0, 2.0])
+    p.add_argument("--sigma", type=float, nargs="*",
+                   default=[0.5, 0.9, 1.0, 2.0, 3.0],
+                   help="QSMP kernel widths to sweep. The one whose k modes are "
+                        "most mutually distinct (max-min pairwise distance) is "
+                        "kept -- an unsupervised selection.")
     p.add_argument("--minfilt-size", type=int, default=256)
     p.add_argument("--k", type=int, default=6, help="Number of prototypes")
-    p.add_argument("--window-len", type=int, default=768,
-                   help="sikmeans non-overlapping window length")
+    p.add_argument("--window-len", type=int, nargs="+", default=[640, 768, 1024],
+                   help="sikmeans non-overlapping window length(s) to sweep. The "
+                        "one with the smallest clustering distortion is kept -- "
+                        "an unsupervised selection.")
     p.add_argument("--n-waves", type=int, default=1000)
     p.add_argument("--noise-std", type=float, default=0.07)
     p.add_argument("--window-support", type=float, default=0.5)
@@ -184,8 +234,11 @@ def main():
                                     args.k, root, params_str, win, device_ids)
             em.save_prototypes(out_file, protos, method="qsmp", k=args.k,
                                ds=ds, info=info)
+            div = info.get("diversity")
+            div_str = "None" if div is None else f"{div:.3f}"
             print(f"[seed {args.seed}] QSMP: n_modes={info['n_modes']} "
-                  f"sigma={info['sigma']} tau={info['tau']} -> {out_file}")
+                  f"sigma={info['sigma']} tau={info['tau']} "
+                  f"diversity={div_str} -> {out_file}")
 
     if "sikmeans" in args.methods:
         out_file = out_dir.joinpath(f"sikmeans_seed-{args.seed}.npz")
@@ -196,7 +249,7 @@ def main():
             em.save_prototypes(out_file, protos, method="sikmeans", k=args.k,
                                ds=ds, info=info)
             print(f"[seed {args.seed}] sikmeans: {protos.shape[0]} centroids "
-                  f"-> {out_file}")
+                  f"win_len={info['win_len']} -> {out_file}")
 
 
 if __name__ == "__main__":

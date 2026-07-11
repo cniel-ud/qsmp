@@ -80,9 +80,12 @@ def main():
                    help="Random seed for this dataset instance")
     p.add_argument("--subseq-len", type=int, default=512, help="Snippet length m")
     p.add_argument("--k", type=int, default=6, help="Number of snippets")
-    p.add_argument("--percentage", type=float, nargs="+", default=[0.30],
-                   help="MPdist sub-subsequence fraction(s) of m. If several are "
-                        "given, the best-covering run is kept. Paper: ~0.30.")
+    p.add_argument("--percentage", type=float, nargs="+",
+                   default=[0.15, 0.20, 0.30, 0.40, 0.50],
+                   help="MPdist sub-subsequence fraction(s) of m to sweep. The "
+                        "best-covering run is kept -- an unsupervised selection "
+                        "mirroring QSMP's sigma / sikmeans' window-len sweeps. "
+                        "Paper used ~0.30; pass a single value to fix it.")
     p.add_argument("--n-waves", type=int, default=1000)
     p.add_argument("--noise-std", type=float, default=0.07)
     p.add_argument("--overwrite", action="store_true")

@@ -43,7 +43,7 @@ import numpy as np
 import stumpy
 
 from qsmp import eval_metrics as em
-from qsmp.datasets import morlet_signal
+from qsmp.datasets import powerlaw_dataset
 
 FREQS = np.array([1, 5, 12, 30, 100, 150])
 
@@ -97,11 +97,11 @@ def main():
         return
 
     m = args.subseq_len
-    # Same generator + seed as the QSMP/sikmeans runs -> identical signal, so
-    # the ground truth the aggregator re-derives matches this signal.
-    T, freq, _ = morlet_signal(
-        FREQS, fs=512, wave_len=m, n_waves=args.n_waves,
-        noise_std=args.noise_std, rng=args.seed)
+    # Same generator + seed (Poisson spacing) as the QSMP/sikmeans runs ->
+    # identical signal, so the ground truth the aggregator re-derives matches.
+    T, _, _, _ = powerlaw_dataset(
+        FREQS, seed=args.seed, fs=512, wave_len=m, n_waves=args.n_waves,
+        noise_std=args.noise_std, spacing="poisson")
     ds = dict(seed=args.seed, m=m, n_waves=args.n_waves,
               noise_std=args.noise_std, freqs=FREQS)
 

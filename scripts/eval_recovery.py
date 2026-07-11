@@ -38,7 +38,7 @@ import numpy as np
 
 from qsmp import eval_metrics as em
 from qsmp import tree
-from qsmp.datasets import morlet_signal
+from qsmp.datasets import powerlaw_dataset
 import qsmp.utils.utils as utils
 from qsmp.utils import windows
 
@@ -159,9 +159,13 @@ def main():
               noise_std=args.noise_std, freqs=FREQS)
 
     # --- dataset (no ground truth needed here; scoring is in the aggregator) --
-    T, freq, _ = morlet_signal(
-        FREQS, fs=512, wave_len=m, n_waves=args.n_waves,
-        noise_std=args.noise_std, rng=args.seed)
+    # Poisson spacing -> overlapping wavelets superimpose, a harder test than
+    # the edge-to-edge 'uniform' tiling. Deterministic in the seed, so every
+    # machine/method sees the same signal and the aggregator can re-derive the
+    # matching ground truth.
+    T, _, _, _ = powerlaw_dataset(
+        FREQS, seed=args.seed, fs=512, wave_len=m, n_waves=args.n_waves,
+        noise_std=args.noise_std, spacing="poisson")
     splice = np.full(0, 0)
 
     if "qsmp" in args.methods:

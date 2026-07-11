@@ -4,12 +4,21 @@ This experiment quantifies how well QSMP, Snippet-Finder, and shift-invariant
 $k$-means (sikmeans) recover the *known* waveforms of the synthetic `power-law`
 dataset, aggregated over several random seeds with 95% confidence intervals.
 
-The `power-law` dataset (`qsmp.datasets.morlet_signal`) concatenates 1-second
-Morlet wavelets drawn from a known frequency alphabet
-`[1, 5, 12, 30, 100, 150]` Hz under a power-law prevalence. Because the
-generating frequencies and phases are known, each dataset instance comes with
-noise-free ground-truth prototype waveforms, enabling three complementary,
-method-agnostic **prototype-recovery** metrics (defined in
+The `power-law` dataset (`qsmp.datasets.powerlaw_dataset`) places Morlet
+wavelets drawn from a known frequency alphabet `[1, 5, 12, 30, 100, 150]` Hz
+under a power-law prevalence. Activations are scattered with **Poisson
+(non-uniform) spacing**, so nearby wavelets *superimpose additively* — a
+length-`m` window is generally a partial superposition of overlapping wavelets,
+a harder and more realistic test than the edge-to-edge `uniform` tiling (where
+every window is a single clean wavelet). The methods can still recover the
+underlying shapes because the interference is sparse and, pooled over the ~1000
+instances, incoherent (it averages toward zero, like the additive noise), while
+the shared prototype survives.
+
+Crucially, the generator produces the clean prototypes (`morlet_waveforms`)
+*before* placing them (`powerlaw_signal`), so the ground truth is exactly those
+prototypes — known even where the signal superimposes them. This enables three
+complementary, method-agnostic **prototype-recovery** metrics (defined in
 `qsmp/eval_metrics.py`):
 
 - **`n_freqs_recovered`** — how many of the ground-truth frequencies the method
@@ -76,9 +85,12 @@ step (`pip install stumpy`).
 
 ## Notes
 
-- **Reproducibility across machines.** `morlet_signal` is deterministic in the
-  seed, so the QSMP/sikmeans runs and the Snippet-Finder runs see the *same*
-  signal per seed even when run on different machines; the ground truth aligns.
+- **Reproducibility across machines.** `powerlaw_dataset` threads one seeded
+  generator through the prototype phases, the activation draw, the Poisson
+  placement, and the noise, so it is deterministic in the seed: the
+  QSMP/sikmeans runs and the Snippet-Finder runs see the *same* signal per seed
+  even when run on different machines, and the aggregator re-derives the exact
+  matching ground truth.
 - **`k = 6`.** The tree is cut (by binary search on the distance threshold
   `tau`) to `k = 6` modes; among the kernel widths `sigma` that yield exactly
   `k` modes, the one with the smallest total nearest-neighbour distance is kept.

@@ -26,7 +26,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from qsmp.datasets import morlet_signal
+from qsmp.datasets import powerlaw_dataset
 
 
 # --------------------------------------------------------------------------- #
@@ -88,26 +88,28 @@ def load_prototypes(path):
 # Ground truth
 # --------------------------------------------------------------------------- #
 def gt_clean_prototypes(freqs, seed, *, fs=512, wave_len=512, n_waves=1000,
-                        noise_std=0.07, pmf_exp=3.1):
+                        noise_std=0.07, pmf_exp=3.1, spacing="poisson"):
     """Return the noise-free prototype waveform for every frequency present.
 
-    Re-generates the dataset for ``seed`` twice: once with the configured
-    ``noise_std`` (to recover the per-slot frequency assignment) and once with
-    ``noise_std=0`` under the *same* seed (so the phases and the frequency draw
-    are identical, but the wavelets are noise-free). The clean prototype of a
-    frequency is then read directly out of the noiseless signal at the first
-    slot carrying that frequency -- so it has the exact phase/morphology of the
-    instances that appear in the noisy signal.
+    With :func:`qsmp.datasets.powerlaw_dataset` the prototypes are produced
+    *before* they are placed into the signal, so the ground truth is simply the
+    clean prototype set it returns -- no need to read waveforms back out of the
+    signal. This is what makes the harder ``'poisson'`` spacing well-defined:
+    even though overlapping wavelets superimpose in the signal, the underlying
+    shapes are known exactly. A frequency is reported as *present* only if it
+    was actually activated for this seed (the rarest frequency can be absent).
 
     Parameters
     ----------
     freqs : numpy.ndarray
         The frequency alphabet, e.g. ``[1, 5, 12, 30, 100, 150]``.
     seed : int
-        Random seed passed to :func:`qsmp.datasets.morlet_signal`.
-    fs, wave_len, n_waves, noise_std, pmf_exp
-        Forwarded to :func:`qsmp.datasets.morlet_signal`; must match the values
-        used to build the dataset under evaluation.
+        Random seed passed to :func:`qsmp.datasets.powerlaw_dataset`.
+    fs, wave_len, n_waves, noise_std, pmf_exp, spacing
+        Forwarded to :func:`qsmp.datasets.powerlaw_dataset`; must match the
+        values used to build the dataset under evaluation. (``noise_std`` does
+        not affect the clean prototypes but is accepted so callers can pass the
+        full parameter set.)
 
     Returns
     -------
@@ -115,30 +117,16 @@ def gt_clean_prototypes(freqs, seed, *, fs=512, wave_len=512, n_waves=1000,
         Shape ``(n_present, wave_len)``. Noise-free prototype per present
         frequency, ordered as ``freqs_present``.
     freqs_present : numpy.ndarray
-        The subset of ``freqs`` that actually occur for this seed (usually all
-        of them, but the rarest frequency can be absent for some seeds).
-    slot_freq : numpy.ndarray
-        Shape ``(n_waves,)``. Ground-truth frequency of each 1-second slot.
+        The subset of ``freqs`` that actually occur for this seed.
+    wave_counts : numpy.ndarray
+        Shape ``(freqs.size,)``. Number of activations per frequency.
     """
     freqs = np.asarray(freqs)
-    common = dict(fs=fs, wave_len=wave_len, n_waves=n_waves, pmf_exp=pmf_exp)
-    # Same seed -> identical phases and per-slot frequency draw.
-    _, freq_noisy, _ = morlet_signal(freqs, noise_std=noise_std, rng=seed,
-                                     **common)
-    sig_clean, freq_clean, _ = morlet_signal(freqs, noise_std=0.0, rng=seed,
-                                             **common)
-    slot_freq = freq_clean.reshape(-1).astype(freqs.dtype)
-    assert np.array_equal(slot_freq, freq_noisy.reshape(-1)), (
-        "noise_std must not change the frequency draw for a fixed seed"
-    )
-
-    freqs_present = np.array([f for f in freqs if np.any(slot_freq == f)])
-    prototypes = np.empty((freqs_present.size, wave_len))
-    for i, f in enumerate(freqs_present):
-        first_slot = int(np.flatnonzero(slot_freq == f)[0])
-        s = first_slot * wave_len
-        prototypes[i] = sig_clean[s:s + wave_len]
-    return prototypes, freqs_present, slot_freq
+    _, prototypes, wave_counts, _ = powerlaw_dataset(
+        freqs, seed=seed, fs=fs, wave_len=wave_len, n_waves=n_waves,
+        noise_std=noise_std, pmf_exp=pmf_exp, spacing=spacing)
+    present = wave_counts > 0
+    return prototypes[present], freqs[present], wave_counts
 
 
 # --------------------------------------------------------------------------- #
@@ -297,8 +285,9 @@ if __name__ == "__main__":
     rng_freqs = np.array([1, 5, 12, 30, 100, 150])
     SEED = 13
 
-    gt_protos, gt_freqs, slot_freq = gt_clean_prototypes(rng_freqs, SEED)
-    print(f"[self-test] frequencies present: {gt_freqs.tolist()}")
+    gt_protos, gt_freqs, wave_counts = gt_clean_prototypes(rng_freqs, SEED)
+    print(f"[self-test] frequencies present: {gt_freqs.tolist()} "
+          f"(counts {wave_counts.tolist()})")
 
     # Oracle method: returns the ground-truth prototypes.
     oracle = prototype_recovery(gt_protos, gt_protos, gt_freqs)

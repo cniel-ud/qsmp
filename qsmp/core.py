@@ -10,7 +10,7 @@ import numpy as np
 from numba import njit, prange, cuda
 from scipy.signal import convolve, firls, group_delay, lfilter
 from scipy.signal import find_peaks
-from scipy.ndimage.filters import maximum_filter1d, minimum_filter1d
+from scipy.ndimage import maximum_filter1d, minimum_filter1d
 from scipy import linalg
 import tempfile
 import math
@@ -24,6 +24,19 @@ except ImportError:
     pass
 
 logger = logging.getLogger(__name__)
+
+@cuda.jit(device=True)
+def dev_max(a, b):
+    # Two-argument max for CUDA kernels. numba's CUDA target (>=0.61) no longer
+    # resolves the 2-arg builtin ``max``/``min`` inside kernels, so kernels call
+    # these device helpers instead.
+    return a if a > b else b
+
+
+@cuda.jit(device=True)
+def dev_min(a, b):
+    return a if a < b else b
+
 
 @cuda.jit(device=True)
 def is_in_splice(splice, m, i):

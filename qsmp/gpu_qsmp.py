@@ -87,8 +87,8 @@ def _compute_and_update_dist_kernel(
         QT_in = QT_even
 
     for j in range(start, QT_out.shape[0], stride):
-        zone_start = max(0, j - excl_zone)
-        zone_stop = min(k, j + excl_zone)
+        zone_start = core.dev_max(0, j - excl_zone)
+        zone_stop = core.dev_min(k, j + excl_zone)
 
         # if i==2 and j==2:
         #     set_trace()
@@ -194,7 +194,7 @@ def _min_argmin_kernel(dist_vec, mindist, mindist_idx, minfilt_size):
     prev_min = math.inf
     sz = dist_vec.size
     if i < sz:
-        for j in range(max(0,i-minfilt_size//2), min(sz, i+minfilt_size//2)):
+        for j in range(core.dev_max(0,i-minfilt_size//2), core.dev_min(sz, i+minfilt_size//2)):
             #XXX: multiple threads reading from the same memory. Is this a
             # problem?
             if dist_vec[j] < prev_min:

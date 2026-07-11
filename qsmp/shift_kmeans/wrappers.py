@@ -69,7 +69,7 @@ def si_pairwise_distances_argmin_min(X, centroids, metric, x_squared_norms):
     centroid_length = centroids.shape[1]
     n_shifts = sample_length - centroid_length + 1
 
-    best_labels = np.empty((n_shifts, n_samples), dtype=np.int)
+    best_labels = np.empty((n_shifts, n_samples), dtype=int)
     best_distances = np.empty((n_shifts, n_samples))
 
     if metric == 'euclidean':

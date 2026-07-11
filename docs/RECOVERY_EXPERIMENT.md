@@ -62,16 +62,19 @@ Snippet-Finder and aggregation steps are CPU-only.
 python -m qsmp.eval_metrics
 
 # 1. Per-seed QSMP + sikmeans (GPU). One invocation per seed; resumable.
+#    Each method sweeps its own grid and self-selects (see "Parameter
+#    selection" below); the defaults shown are the swept grids.
 for s in $(seq 0 19); do
     python scripts/eval_recovery.py --root . --seed $s \
-        --subseq-len 512 --sigma 0.9 1 2 --minfilt-size 256 --k 6
+        --subseq-len 512 --sigma 0.5 0.9 1 2 3 --minfilt-size 256 --k 6 \
+        --window-len 640 768 1024
 done
 
 # 2. Per-seed Snippet-Finder (CPU). Also resumable. Order vs. step 1 is
 #    irrelevant -- scoring happens only in step 3.
 for s in $(seq 0 19); do
     python scripts/snippetfinder_recovery.py --root . --seed $s \
-        --subseq-len 512 --k 6 --percentage 0.30
+        --subseq-len 512 --k 6 --percentage 0.15 0.2 0.3 0.4 0.5
 done
 
 # 3. Score every method's prototypes and aggregate into the LaTeX table.
@@ -91,11 +94,26 @@ step (`pip install stumpy`).
   QSMP/sikmeans runs and the Snippet-Finder runs see the *same* signal per seed
   even when run on different machines, and the aggregator re-derives the exact
   matching ground truth.
-- **`k = 6`.** The tree is cut (by binary search on the distance threshold
-  `tau`) to `k = 6` modes; among the kernel widths `sigma` that yield exactly
-  `k` modes, the one with the smallest total nearest-neighbour distance is kept.
-  Choosing `k` uses knowledge of the alphabet size, matching the qualitative
-  figure in the paper.
-- **Snippet-Finder `percentage`.** This is the MPdist sub-subsequence length as
-  a fraction of `m` (`stumpy.snippets(..., percentage=...)`), equivalent to
-  `per/100` in the original Matlab `snippetfinder(data, N, sub, per)`.
+- **Parameter selection is unsupervised.** The harder Poisson signal shifts
+  each method's optimal settings, so parameters are *not* hand-picked and are
+  *never* tuned to the recovery metric (that would leak the ground truth and
+  make the comparison circular). Instead every method sweeps a grid and selects
+  its configuration by its **own internal, ground-truth-free objective**, then
+  that single selected configuration is scored:
+  - **QSMP `sigma`** — the tree is cut (by binary search on the distance
+    threshold `tau`) to exactly `k` modes for each width; the width kept is the
+    one that **maximises the minimum pairwise shift-invariant distance between
+    its `k` modes** (max-min diversity). This encodes QSMP's goal of `k`
+    *distinct* representatives. (It replaces an earlier min-total-NN-distance
+    tie-break, which rewarded tight — hence redundant — clusters and so
+    preferred a width whose modes collapse onto the most-prevalent frequencies.)
+  - **sikmeans `window-len`** — swept; the length with the smallest clustering
+    **distortion** (mean inertia, comparable across window counts under cosine +
+    z-normalisation) is kept.
+  - **Snippet-Finder `percentage`** — the MPdist sub-subsequence length as a
+    fraction of `m` (`stumpy.snippets(..., percentage=...)`, equivalent to
+    `per/100` in the Matlab `snippetfinder(data, N, sub, per)`); swept, keeping
+    the run with the highest snippet **coverage**.
+- **`k = 6` and `m = 512` stay fixed** for all methods: the alphabet size and
+  the pattern length are known domain facts, given equally to every method, and
+  match the assumptions behind the paper's qualitative figure.

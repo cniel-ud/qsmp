@@ -139,17 +139,28 @@ def _znorm(a, axis=-1, eps=1e-8):
     return (a - mu) / sd
 
 
-def _pairwise_si_dist(P, G, max_lag):
+def _pairwise_si_dist(P, G, max_lag=None, min_overlap=None):
     """Shift-invariant z-normalised distance matrix between rows of ``P`` and ``G``.
 
-    Mirrors the paper's shift-invariant distance (Eq. 7): each waveform is
-    z-normalised, one is slid against the other over ``[-max_lag, +max_lag]``,
-    and the minimum length-normalised z-normalised Euclidean distance over the
-    overlap is kept. After re-z-normalising an overlap of length ``L`` to
-    zero-mean/unit-std, its sum of squares is exactly ``L``, so the
-    length-normalised squared distance reduces to ``2 - 2*corr`` where ``corr``
-    is the Pearson correlation over the overlap. Each lag is therefore a single
-    matrix multiply, which keeps the (n_slots x n_prototypes) computation fast.
+    In the spirit of the paper's shift-invariant distance (the min-pooling
+    dissimilarity :math:`\\breve{D}_{i,j}`), each waveform is z-normalised, one
+    is slid against the other, and the minimum length-normalised z-normalised
+    Euclidean distance over the overlap is kept. After re-z-normalising an
+    overlap of length ``L`` to zero-mean/unit-std, its sum of squares is exactly
+    ``L``, so the length-normalised squared distance reduces to ``2 - 2*corr``
+    where ``corr`` is the Pearson correlation over the overlap. Each lag is
+    therefore a single matrix multiply.
+
+    Shift range vs. overlap. When comparing method prototypes to ground-truth
+    prototypes, a returned waveform can be an arbitrarily positioned *sub-segment*
+    of the recurring pattern -- Snippet-Finder snippets in particular are
+    extracted at essentially any phase, so their energy can be offset from the
+    canonical (centred) ground-truth prototype by more than ``m/4``. Capping the
+    shift too tightly would therefore under-credit exactly those methods. We thus
+    default to searching the *full* lag range while requiring a minimum overlap
+    of ``m/2`` samples (``min_overlap``): this reaches large genuine offsets
+    while forbidding the degenerate tiny-overlap alignments (an overlap of a few
+    samples is almost always spuriously well-correlated, giving fake ``cos~1``).
 
     Parameters
     ----------
@@ -157,8 +168,12 @@ def _pairwise_si_dist(P, G, max_lag):
         ``(n, m)`` waveforms (rows).
     G : numpy.ndarray
         ``(g, m)`` waveforms (rows).
-    max_lag : int
-        Maximum absolute shift, in samples (the paper uses ``m/4``).
+    max_lag : int or None
+        Maximum absolute shift, in samples. ``None`` (default) searches the full
+        range ``m-1`` subject to ``min_overlap``.
+    min_overlap : int or None
+        Minimum number of overlapping samples for a lag to be considered.
+        ``None`` (default) uses ``m // 2``. Must be ``>= 2``.
 
     Returns
     -------
@@ -167,6 +182,11 @@ def _pairwise_si_dist(P, G, max_lag):
     """
     P, G = np.atleast_2d(P).astype(float), np.atleast_2d(G).astype(float)
     m = P.shape[1]
+    if max_lag is None:
+        max_lag = m - 1
+    if min_overlap is None:
+        min_overlap = m // 2
+    min_overlap = max(int(min_overlap), 2)
     best = np.full((P.shape[0], G.shape[0]), np.inf)
     for lag in range(-max_lag, max_lag + 1):
         if lag < 0:
@@ -176,7 +196,7 @@ def _pairwise_si_dist(P, G, max_lag):
         else:
             Pi, Gj = P, G
         L = Pi.shape[1]
-        if L < 2:
+        if L < min_overlap:
             continue
         Pz, Gz = _znorm(Pi), _znorm(Gj)          # rows: mean 0, sum-sq = L
         corr = (Pz @ Gz.T) / L                    # (n, g) Pearson correlation
@@ -185,14 +205,14 @@ def _pairwise_si_dist(P, G, max_lag):
     return best
 
 
-def shift_invariant_znorm_dist(a, b, max_lag):
+def shift_invariant_znorm_dist(a, b, max_lag=None, min_overlap=None):
     """Shift-invariant z-normalised distance between two 1D waveforms.
 
     Thin scalar wrapper around :func:`_pairwise_si_dist` (kept for readability
     and tests). See that function for the definition.
     """
     return float(_pairwise_si_dist(np.atleast_2d(a), np.atleast_2d(b),
-                                   max_lag)[0, 0])
+                                   max_lag, min_overlap)[0, 0])
 
 
 # --------------------------------------------------------------------------- #
@@ -217,7 +237,7 @@ def snap_to_alphabet(freq_hz, alphabet):
 # Metrics
 # --------------------------------------------------------------------------- #
 def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
-                       max_lag=None):
+                       max_lag=None, min_overlap=None):
     """Prototype-recovery metrics for one method on one dataset instance.
 
     Parameters
@@ -233,7 +253,13 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
     fs : int
         Sampling rate, for peak-frequency estimation.
     max_lag : int or None
-        Max shift for the shift-invariant distance; defaults to ``m/4``.
+        Max shift for the shift-invariant distance; ``None`` (default) searches
+        the full lag range subject to ``min_overlap`` (see
+        :func:`_pairwise_si_dist`), so arbitrarily positioned sub-segments (e.g.
+        Snippet-Finder snippets) are matched on morphology rather than penalised
+        for their position.
+    min_overlap : int or None
+        Minimum overlap (samples) for a lag; ``None`` (default) uses ``m/2``.
 
     Returns
     -------
@@ -243,15 +269,14 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
         ``n_freqs_total`` : number of ground-truth frequencies present.
         ``recovery_error`` : mean shift-invariant z-norm distance of the
         Hungarian-matched (prototype -> ground truth) pairs. Lower is better.
+        ``recovery_cosine`` : mean shift-invariant cosine similarity of the
+        matched pairs (``1`` = identical morphology). Higher is better.
         ``peak_freq_error`` : mean |estimated - true| peak frequency (Hz) over
         matched pairs.
     """
     pred_protos = np.atleast_2d(pred_protos)
     gt_protos = np.atleast_2d(gt_protos)
     gt_freqs = np.asarray(gt_freqs, dtype=float)
-    m = pred_protos.shape[1]
-    if max_lag is None:
-        max_lag = m // 4
 
     # --- distinct-frequency recovery via peak spectrum ---------------------- #
     pred_peaks = np.array([peak_frequency(p, fs) for p in pred_protos])
@@ -259,10 +284,17 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
     n_recovered = np.unique(snapped).size
 
     # --- morphology + peak-frequency error via Hungarian matching ----------- #
-    D = _pairwise_si_dist(pred_protos, gt_protos, max_lag)
+    D = _pairwise_si_dist(pred_protos, gt_protos, max_lag, min_overlap)
     # Match min(k, n_present) pairs; if k > n_present, only n_present matched.
     row, col = linear_sum_assignment(D)
-    recovery_error = float(D[row, col].mean())
+    d_pairs = D[row, col]
+    recovery_error = float(d_pairs.mean())
+    # Shift-invariant cosine similarity of the matched pairs. For z-normalised
+    # waveforms cos = 1 - d^2/2 (same measure recovery_error derives from), but
+    # we average the *per-pair* cosine -- the mean does not commute with the
+    # non-linear 1 - d^2/2, so converting the aggregate recovery_error would be
+    # wrong. This is the more interpretable morphology score (1 = identical).
+    recovery_cosine = float(np.mean(1.0 - d_pairs ** 2 / 2.0))
     peak_err = float(np.mean([
         abs(pred_peaks[r] - gt_freqs[c]) for r, c in zip(row, col)
     ]))
@@ -270,6 +302,7 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
         n_freqs_recovered=int(n_recovered),
         n_freqs_total=int(gt_freqs.size),
         recovery_error=recovery_error,
+        recovery_cosine=recovery_cosine,
         peak_freq_error=peak_err,
     )
 
@@ -294,6 +327,7 @@ if __name__ == "__main__":
     print(f"[self-test] oracle recovery : {oracle}")
     assert oracle["n_freqs_recovered"] == gt_freqs.size
     assert oracle["recovery_error"] < 1e-6
+    assert oracle["recovery_cosine"] > 1.0 - 1e-6
     assert oracle["peak_freq_error"] == 0.0
 
     # Collapse method: k copies of the most-prevalent (lowest-freq) prototype.
@@ -302,5 +336,6 @@ if __name__ == "__main__":
     print(f"[self-test] collapse recovery : {coll}")
     assert coll["n_freqs_recovered"] == 1
     assert coll["recovery_error"] > oracle["recovery_error"]
+    assert coll["recovery_cosine"] < oracle["recovery_cosine"]
 
     print("[self-test] OK")

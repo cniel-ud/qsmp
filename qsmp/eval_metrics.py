@@ -237,7 +237,7 @@ def snap_to_alphabet(freq_hz, alphabet):
 # Metrics
 # --------------------------------------------------------------------------- #
 def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
-                       max_lag=None, min_overlap=None):
+                       max_lag=None, min_overlap=None, matching="best"):
     """Prototype-recovery metrics for one method on one dataset instance.
 
     Parameters
@@ -260,6 +260,23 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
         for their position.
     min_overlap : int or None
         Minimum overlap (samples) for a lag; ``None`` (default) uses ``m/2``.
+    matching : {"best", "hungarian"}
+        How predictions are paired to ground-truth prototypes for the
+        morphology/peak-error metrics.
+
+        ``"best"`` (default) matches *with replacement*: every ground-truth
+        prototype is scored against its closest prediction, and one prediction
+        may serve several ground truths. Each metric then answers "how well is
+        each true prototype represented?" in isolation; redundancy/collapse is
+        deliberately NOT penalised here because ``n_freqs_recovered`` already
+        measures it, keeping the metrics orthogonal. Without replacement, a
+        method that (say) duplicates the prevalent 1 Hz wavelet is *also*
+        charged on CosSim for a forced leftover pairing (e.g. a 1 Hz prototype
+        assigned to the 150 Hz ground truth), double-counting the same failure.
+
+        ``"hungarian"`` matches without replacement (1-to-1, minimum-cost
+        assignment over ``min(k, n_present)`` pairs), so morphology and
+        coverage failures are entangled in one number. Kept for comparison.
 
     Returns
     -------
@@ -268,11 +285,15 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
         hit by at least one predicted prototype.
         ``n_freqs_total`` : number of ground-truth frequencies present.
         ``recovery_error`` : mean shift-invariant z-norm distance of the
-        Hungarian-matched (prototype -> ground truth) pairs. Lower is better.
+        matched (ground truth -> prototype) pairs. Lower is better.
         ``recovery_cosine`` : mean shift-invariant cosine similarity of the
         matched pairs (``1`` = identical morphology). Higher is better.
         ``peak_freq_error`` : mean |estimated - true| peak frequency (Hz) over
         matched pairs.
+
+        With ``matching="best"`` there is one pair per present ground-truth
+        prototype (``n_present`` pairs); with ``matching="hungarian"`` there
+        are ``min(k, n_present)`` pairs.
     """
     pred_protos = np.atleast_2d(pred_protos)
     gt_protos = np.atleast_2d(gt_protos)
@@ -283,11 +304,22 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
     snapped = np.array([snap_to_alphabet(f, gt_freqs) for f in pred_peaks])
     n_recovered = np.unique(snapped).size
 
-    # --- morphology + peak-frequency error via Hungarian matching ----------- #
+    # --- morphology + peak-frequency error over matched pairs --------------- #
+    # D[i, j] = shift-invariant distance from prediction i to ground truth j.
     D = _pairwise_si_dist(pred_protos, gt_protos, max_lag, min_overlap)
-    # Match min(k, n_present) pairs; if k > n_present, only n_present matched.
-    row, col = linear_sum_assignment(D)
-    d_pairs = D[row, col]
+    if matching == "best":
+        # With replacement: each ground truth (column) takes its closest
+        # prediction. One prediction may serve several ground truths, so
+        # collapse is not charged here -- n_freqs_recovered already measures it.
+        pred_idx = D.argmin(axis=0)                    # (n_present,)
+        gt_idx = np.arange(D.shape[1])
+    elif matching == "hungarian":
+        # Without replacement: 1-to-1 minimum-cost assignment over
+        # min(k, n_present) pairs.
+        pred_idx, gt_idx = linear_sum_assignment(D)
+    else:
+        raise ValueError(f"matching must be 'best' or 'hungarian', got {matching!r}")
+    d_pairs = D[pred_idx, gt_idx]
     recovery_error = float(d_pairs.mean())
     # Shift-invariant cosine similarity of the matched pairs. For z-normalised
     # waveforms cos = 1 - d^2/2 (same measure recovery_error derives from), but
@@ -296,7 +328,7 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
     # wrong. This is the more interpretable morphology score (1 = identical).
     recovery_cosine = float(np.mean(1.0 - d_pairs ** 2 / 2.0))
     peak_err = float(np.mean([
-        abs(pred_peaks[r] - gt_freqs[c]) for r, c in zip(row, col)
+        abs(pred_peaks[r] - gt_freqs[c]) for r, c in zip(pred_idx, gt_idx)
     ]))
     return dict(
         n_freqs_recovered=int(n_recovered),
@@ -337,5 +369,21 @@ if __name__ == "__main__":
     assert coll["n_freqs_recovered"] == 1
     assert coll["recovery_error"] > oracle["recovery_error"]
     assert coll["recovery_cosine"] < oracle["recovery_cosine"]
+
+    # Both matching modes recover the oracle perfectly. They differ on
+    # collapse: "best" (with replacement) scores each ground truth against its
+    # closest prediction (here all identical, so every GT maps to the same 1 Hz
+    # copy); "hungarian" (1-to-1) is forced into leftover pairings. The oracle
+    # is invariant to the choice; both must flag collapse as worse.
+    for mode in ("best", "hungarian"):
+        orc = prototype_recovery(gt_protos, gt_protos, gt_freqs, matching=mode)
+        col = prototype_recovery(collapse, gt_protos, gt_freqs, matching=mode)
+        assert orc["recovery_cosine"] > 1.0 - 1e-6, mode
+        assert col["recovery_cosine"] < orc["recovery_cosine"], mode
+    try:
+        prototype_recovery(gt_protos, gt_protos, gt_freqs, matching="bogus")
+        raise AssertionError("expected ValueError for unknown matching")
+    except ValueError:
+        pass
 
     print("[self-test] OK")

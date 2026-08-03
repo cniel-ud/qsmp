@@ -171,10 +171,10 @@ def fig_gallery(protos, gt_cache, seed, out_path):
                 ax.plot(_znorm(gref), color="0.6", lw=2.4, alpha=0.8, zorder=1)
             # recovered prototypes that snapped to this column
             idx = np.where(cols == ci)[0]
-            # Draw every prototype in the column, but track the BEST match (the
-            # one the Hungarian matcher would pair to this ground-truth
-            # frequency) so the label reflects what the metrics credit -- not an
-            # arbitrary first-by-array-index prototype.
+            # Draw every prototype in the column, but track the BEST match --
+            # the closest prediction to this ground-truth frequency, which is
+            # exactly what the (with-replacement) recovery metric credits -- so
+            # the label reflects the metric, not an arbitrary first prototype.
             best_cos, best_df = -np.inf, None
             for j in idx:
                 if gref is not None:

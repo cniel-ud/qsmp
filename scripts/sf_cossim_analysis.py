@@ -136,10 +136,16 @@ def si_cos(a, b):
 
 
 # --------------------------------------------------------------------------- #
-# Matched pairs (Hungarian, identical to eval_metrics.prototype_recovery)
+# Matched pairs (consistent with eval_metrics.prototype_recovery)
 # --------------------------------------------------------------------------- #
-def matched_pairs(rec_dir, method, gt_cache):
-    """Per-seed Hungarian-matched (gt_freq, cosine, prototype, gt_proto) pairs."""
+def matched_pairs(rec_dir, method, gt_cache, matching="best"):
+    """Per-seed matched (gt_freq, cosine, prototype, gt_proto) pairs.
+
+    ``matching="best"`` (default, matching ``prototype_recovery``): each
+    ground-truth prototype takes its closest prediction (with replacement), so
+    there is one pair per present frequency and collapse is not double-charged.
+    ``matching="hungarian"``: 1-to-1 assignment, kept for comparison.
+    """
     pairs = []
     for f in sorted(rec_dir.glob(f"{method}_seed-*.npz")):
         P, meta = em.load_prototypes(f)
@@ -151,7 +157,10 @@ def matched_pairs(rec_dir, method, gt_cache):
         gt, gf, _ = gt_cache[seed]
         P = np.atleast_2d(P)
         D = em._pairwise_si_dist(P, gt)
-        row, col = linear_sum_assignment(D)
+        if matching == "best":
+            row, col = D.argmin(axis=0), np.arange(D.shape[1])
+        else:
+            row, col = linear_sum_assignment(D)
         for r, c in zip(row, col):
             cos = 1.0 - D[r, c] ** 2 / 2.0
             pairs.append(dict(seed=seed, freq=float(gf[c]), cos=cos,
@@ -195,7 +204,7 @@ def demo_spliced_window(gt_cache, m, L):
 # [B] Per-pair cosine + spectral purity across methods
 # --------------------------------------------------------------------------- #
 def report_pair_stats(all_pairs):
-    print(f"[B] Per matched pair (Hungarian), all seeds:")
+    print(f"[B] Per matched pair (best match, with replacement), all seeds:")
     print(f"    {'method':14s} {'n':>4s} {'mean cos':>8s} {'median':>7s} "
           f"{'frac<%.1f' % POOR_COS:>9s} {'purity':>7s}")
     for m_ in METHOD_ORDER:
@@ -229,7 +238,12 @@ def report_poor_pair_location(all_pairs, alphabet):
 
 
 def report_sf_highfreq_leftovers(sf_pairs, L, m, n_mpdist=6):
-    """MPdist + peak-freq of SF pairs matched to the rare high frequencies."""
+    """MPdist + peak-freq of SF's BEST snippet for each rare high frequency.
+
+    With replacement, each poor pair is SF's *closest available* snippet for
+    that ground-truth frequency -- not a leftover forced on it by a 1-to-1
+    assignment. So a poor pair here means SF has no good candidate at all.
+    """
     hi = [p for p in sf_pairs if p["freq"] >= HIGH_FREQ]
     poor = [p for p in hi if p["cos"] < POOR_COS]
     good = [p for p in hi if p["cos"] >= POOR_COS]
@@ -242,7 +256,7 @@ def report_sf_highfreq_leftovers(sf_pairs, L, m, n_mpdist=6):
     d_good = [mpdist(p["proto"], p["gt"], L) for p in good[:n_mpdist]]
     pk_poor = Counter(int(round(em.peak_frequency(p["proto"]))) for p in poor)
 
-    print(f"[C] SF pairs matched to GT >= {HIGH_FREQ:.0f} Hz "
+    print(f"[C] SF's best snippet for each GT >= {HIGH_FREQ:.0f} Hz "
           f"({len(poor)} poor, {len(good)} good):")
     print(f"    MPdist(snippet, gt): poor pairs "
           f"{np.mean(d_poor):.1f} +/- {np.std(d_poor):.1f} "
@@ -251,10 +265,10 @@ def report_sf_highfreq_leftovers(sf_pairs, L, m, n_mpdist=6):
           f"  [first {n_mpdist} of each]")
     print(f"    peak-freq histogram of the poor snippets: "
           f"{sorted(pk_poor.items())}")
-    print("    -> poor 'matches' sit at the NOISE baseline under SF's own "
-          "measure: SF never\n       selected high-frequency windows (rare "
-          "freqs barely move ProfileArea);\n       the Hungarian matcher "
-          "paired leftover low-frequency snippets.\n")
+    print("    -> even SF's CLOSEST snippet to a rare frequency sits at the "
+          "noise baseline\n       under SF's own measure: SF simply never "
+          "produced a high-frequency snippet\n       (rare freqs barely move "
+          "ProfileArea, so coverage spends its budget elsewhere).\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -279,11 +293,12 @@ def report_mpdist_recovery(rec_dir, gt_cache, L):
         gt, _, _ = gt_cache[seed]
         P = np.atleast_2d(P)
         D = np.array([[mpdist(p, g, L) for g in gt] for p in P])
-        row, col = linear_sum_assignment(D)
-        per_seed[m_][seed] = float(D[row, col].mean())
+        # Best match (with replacement), consistent with prototype_recovery:
+        # each ground truth scored against its closest prediction under MPdist.
+        per_seed[m_][seed] = float(D.min(axis=0).mean())
 
     print(f"[D] Fairness check -- recovery under SF's OWN distance "
-          f"(Hungarian-matched mean MPdist_L{L}, lower better):")
+          f"(best-match mean MPdist_L{L}, lower better):")
     for m_ in METHOD_ORDER:
         a = np.array(list(per_seed[m_].values()))
         print(f"    {m_:14s} mean={a.mean():6.2f}  sd={a.std(ddof=1):5.2f}  "

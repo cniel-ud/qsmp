@@ -23,10 +23,31 @@ that interface, which keeps the comparison symmetric.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from qsmp.datasets import powerlaw_dataset
+
+
+def resolve_rec_dir(root, spacing):
+    """Locate the recovery prototype directory for a given ``spacing``.
+
+    Prefers ``<root>/results/recovery/<spacing>/``. Falls back to the flat
+    legacy ``<root>/results/recovery/`` (whose files predate spacing subdirs
+    and are all ``poisson``) so older result sets still load. Returns the
+    (possibly empty) ``<spacing>`` subdir when nothing is found, so the caller
+    can report a clear missing-directory error.
+    """
+    base = Path(root).joinpath("results", "recovery")
+    sub = base.joinpath(spacing)
+    if any(sub.glob("*_seed-*.npz")):
+        return sub
+    if spacing == "poisson" and any(
+            f.parent == base for f in base.glob("*_seed-*.npz")):
+        return base
+    return sub
 
 
 # --------------------------------------------------------------------------- #
@@ -52,7 +73,12 @@ def save_prototypes(path, prototypes, *, method, k, ds, info=None):
         Requested number of prototypes.
     ds : dict
         Dataset parameters needed to re-derive the ground truth:
-        ``seed``, ``m``, ``n_waves``, ``noise_std``, ``freqs``.
+        ``seed``, ``m``, ``n_waves``, ``noise_std``, ``freqs``, and optionally
+        ``spacing`` (``"poisson"`` or ``"uniform"``; defaults to ``"poisson"``
+        for backward compatibility with files written before spacing was a
+        sweep dimension). The exact spacing is saved so the aggregator
+        re-derives the matching ground truth regardless of where the file
+        lives on disk.
     info : dict, optional
         Free-form method metadata (chosen sigma/tau, timings, ...), stored under
         a JSON-free flat namespace with an ``info_`` prefix.
@@ -61,7 +87,8 @@ def save_prototypes(path, prototypes, *, method, k, ds, info=None):
                    seed=int(ds["seed"]), m=int(ds["m"]),
                    n_waves=int(ds["n_waves"]),
                    noise_std=float(ds["noise_std"]),
-                   freqs=np.asarray(ds["freqs"]))
+                   freqs=np.asarray(ds["freqs"]),
+                   spacing=str(ds.get("spacing", "poisson")))
     for key, val in (info or {}).items():
         payload[f"info_{key}"] = np.asarray(val)
     np.savez(path, **payload)
@@ -71,13 +98,17 @@ def load_prototypes(path):
     """Load a prototype file saved by :func:`save_prototypes`.
 
     Returns ``(prototypes, meta)`` where ``meta`` has ``method, k, seed, m,
-    n_waves, noise_std, freqs`` plus any ``info_*`` fields (prefix stripped).
+    n_waves, noise_std, freqs, spacing`` plus any ``info_*`` fields (prefix
+    stripped). ``spacing`` defaults to ``"poisson"`` for files written before
+    it was recorded.
     """
     with np.load(path, allow_pickle=True) as d:
         protos = d["prototypes"]
         meta = dict(method=str(d["method"]), k=int(d["k"]), seed=int(d["seed"]),
                     m=int(d["m"]), n_waves=int(d["n_waves"]),
-                    noise_std=float(d["noise_std"]), freqs=d["freqs"])
+                    noise_std=float(d["noise_std"]), freqs=d["freqs"],
+                    spacing=str(d["spacing"]) if "spacing" in d.files
+                    else "poisson")
         for key in d.files:
             if key.startswith("info_"):
                 meta[key[len("info_"):]] = d[key]

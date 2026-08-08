@@ -153,7 +153,8 @@ def matched_pairs(rec_dir, method, gt_cache, matching="best"):
         if seed not in gt_cache:
             gt_cache[seed] = em.gt_clean_prototypes(
                 np.asarray(meta["freqs"]), seed, wave_len=int(meta["m"]),
-                n_waves=int(meta["n_waves"]), noise_std=float(meta["noise_std"]))
+                n_waves=int(meta["n_waves"]), noise_std=float(meta["noise_std"]),
+                spacing=str(meta["spacing"]))
         gt, gf, _ = gt_cache[seed]
         P = np.atleast_2d(P)
         D = em._pairwise_si_dist(P, gt)
@@ -324,15 +325,21 @@ def report_mpdist_recovery(rec_dir, gt_cache, L):
 def main():
     p = ArgumentParser(description=__doc__)
     p.add_argument("--root", default=".")
+    p.add_argument("--spacing", choices=["poisson", "uniform"], default="poisson",
+                   help="Which result set to analyse. Defaults to poisson -- "
+                        "the overlapping signal that drives SF's CosSim deficit; "
+                        "the mechanisms are specific to superposition, so poisson "
+                        "is the intended set. Reads results/recovery/<spacing>/.")
     args = p.parse_args()
 
-    rec_dir = Path(args.root).joinpath("results", "recovery")
-    if not any(rec_dir.glob("*_seed-*.npz")):
+    rec_dir = em.resolve_rec_dir(args.root, args.spacing)
+    if not any(f.parent == rec_dir for f in rec_dir.glob("*_seed-*.npz")):
         raise SystemExit(f"No prototype files found in {rec_dir}")
 
     # Fragment length actually used by the SF runs (auto-selected percentage).
     sf_meta = [em.load_prototypes(f)[1]
-               for f in sorted(rec_dir.glob("snippetfinder_seed-*.npz"))]
+               for f in sorted(rec_dir.glob("snippetfinder_seed-*.npz"))
+               if f.parent == rec_dir]
     m = int(sf_meta[0]["m"])
     pcts = sorted({float(np.asarray(mt["percentage"])) for mt in sf_meta})
     L = int(np.ceil(pcts[0] * m))

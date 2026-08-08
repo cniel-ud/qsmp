@@ -56,13 +56,16 @@ def load_all(rec_dir):
     protos = {}
     gt_cache = {}
     for f in sorted(rec_dir.glob("*_seed-*.npz")):
+        if f.parent != rec_dir:
+            continue
         p, meta = em.load_prototypes(f)
         mth, seed = meta["method"], int(meta["seed"])
         protos.setdefault(mth, {})[seed] = np.atleast_2d(p)
         if seed not in gt_cache:
             g, gfreqs, _ = em.gt_clean_prototypes(
                 np.asarray(meta["freqs"]), seed, wave_len=int(meta["m"]),
-                n_waves=int(meta["n_waves"]), noise_std=float(meta["noise_std"]))
+                n_waves=int(meta["n_waves"]), noise_std=float(meta["noise_std"]),
+                spacing=str(meta["spacing"]))
             gt_cache[seed] = (np.atleast_2d(g), np.asarray(gfreqs, dtype=float))
     return protos, gt_cache
 
@@ -337,11 +340,15 @@ def fig_metric_distributions(protos, gt_cache, out_path):
 def main():
     p = ArgumentParser(description=__doc__)
     p.add_argument("--root", default=".")
+    p.add_argument("--spacing", choices=["poisson", "uniform"], default="poisson",
+                   help="Which result set to visualise (default poisson, the "
+                        "supplement's harder signal). Reads "
+                        "results/recovery/<spacing>/.")
     p.add_argument("--seed", type=int, default=None,
                    help="Force the gallery seed (default: representative seed)")
     args = p.parse_args()
 
-    rec_dir = Path(args.root).joinpath("results", "recovery")
+    rec_dir = em.resolve_rec_dir(args.root, args.spacing)
     fig_dir = rec_dir.joinpath("figs")
     fig_dir.mkdir(parents=True, exist_ok=True)
 

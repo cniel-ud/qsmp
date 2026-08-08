@@ -188,6 +188,12 @@ def main():
                         "an unsupervised selection.")
     p.add_argument("--n-waves", type=int, default=1000)
     p.add_argument("--noise-std", type=float, default=0.07)
+    p.add_argument("--spacing", choices=["poisson", "uniform"], default="poisson",
+                   help="Wavelet arrival spacing. 'uniform' tiles wavelets "
+                        "edge-to-edge (each window is one clean wavelet -- the "
+                        "easier main-paper test); 'poisson' scatters arrivals so "
+                        "wavelets superimpose (the harder supplement test). "
+                        "Results are written under results/recovery/<spacing>/.")
     p.add_argument("--window-support", type=float, default=0.5)
     p.add_argument("--window-type", default="rect",
                    help="Centeredness window type (rect/gauss/None)")
@@ -198,24 +204,26 @@ def main():
     args = p.parse_args()
 
     root = Path(args.root)
-    out_dir = root.joinpath("results", "recovery")
+    # Keep uniform (main-paper) and poisson (supplement) sets in separate
+    # subdirs so they never collide and each can be aggregated independently.
+    out_dir = root.joinpath("results", "recovery", args.spacing)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     m = args.subseq_len
     sigma = np.array(args.sigma)
     # Dataset parameters saved with every prototype file so the aggregator can
-    # re-derive the exact ground truth for this seed.
+    # re-derive the exact ground truth for this seed (spacing included).
     ds = dict(seed=args.seed, m=m, n_waves=args.n_waves,
-              noise_std=args.noise_std, freqs=FREQS)
+              noise_std=args.noise_std, freqs=FREQS, spacing=args.spacing)
 
     # --- dataset (no ground truth needed here; scoring is in the aggregator) --
-    # Poisson spacing -> overlapping wavelets superimpose, a harder test than
-    # the edge-to-edge 'uniform' tiling. Deterministic in the seed, so every
-    # machine/method sees the same signal and the aggregator can re-derive the
-    # matching ground truth.
+    # Deterministic in the seed, so every machine/method sees the same signal
+    # and the aggregator can re-derive the matching ground truth. 'poisson'
+    # spacing lets overlapping wavelets superimpose (harder); 'uniform' tiles
+    # them edge-to-edge (each window is one clean wavelet).
     T, _, _, _ = powerlaw_dataset(
         FREQS, seed=args.seed, fs=512, wave_len=m, n_waves=args.n_waves,
-        noise_std=args.noise_std, spacing="poisson")
+        noise_std=args.noise_std, spacing=args.spacing)
     splice = np.full(0, 0)
 
     if "qsmp" in args.methods:

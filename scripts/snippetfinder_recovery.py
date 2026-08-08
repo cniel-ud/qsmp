@@ -88,11 +88,15 @@ def main():
                         "Paper used ~0.30; pass a single value to fix it.")
     p.add_argument("--n-waves", type=int, default=1000)
     p.add_argument("--noise-std", type=float, default=0.07)
+    p.add_argument("--spacing", choices=["poisson", "uniform"], default="poisson",
+                   help="Wavelet arrival spacing; must match the QSMP/sikmeans "
+                        "runs being compared. Results are written under "
+                        "results/recovery/<spacing>/.")
     p.add_argument("--overwrite", action="store_true")
     args = p.parse_args()
 
     root = Path(args.root)
-    out_dir = root.joinpath("results", "recovery")
+    out_dir = root.joinpath("results", "recovery", args.spacing)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir.joinpath(f"snippetfinder_seed-{args.seed}.npz")
     if out_file.is_file() and not args.overwrite:
@@ -100,13 +104,13 @@ def main():
         return
 
     m = args.subseq_len
-    # Same generator + seed (Poisson spacing) as the QSMP/sikmeans runs ->
-    # identical signal, so the ground truth the aggregator re-derives matches.
+    # Same generator + seed + spacing as the QSMP/sikmeans runs -> identical
+    # signal, so the ground truth the aggregator re-derives matches.
     T, _, _, _ = powerlaw_dataset(
         FREQS, seed=args.seed, fs=512, wave_len=m, n_waves=args.n_waves,
-        noise_std=args.noise_std, spacing="poisson")
+        noise_std=args.noise_std, spacing=args.spacing)
     ds = dict(seed=args.seed, m=m, n_waves=args.n_waves,
-              noise_std=args.noise_std, freqs=FREQS)
+              noise_std=args.noise_std, freqs=FREQS, spacing=args.spacing)
 
     protos, info = run_snippetfinder(T, m, args.k, args.percentage)
     print(f"[seed {args.seed}] Snippet-Finder: k={protos.shape[0]}, "

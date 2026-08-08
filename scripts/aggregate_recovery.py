@@ -14,7 +14,8 @@ methods may be produced in any order.
 
 Usage::
 
-    python scripts/aggregate_recovery.py --root .
+    python scripts/aggregate_recovery.py --root .                 # uniform (main paper)
+    python scripts/aggregate_recovery.py --root . --spacing poisson  # supplement
 """
 
 from argparse import ArgumentParser
@@ -54,18 +55,22 @@ def ci95(x):
 
 def _gt_cache_key(meta):
     return (int(meta["seed"]), int(meta["m"]), int(meta["n_waves"]),
-            float(meta["noise_std"]), tuple(np.asarray(meta["freqs"]).tolist()))
+            float(meta["noise_std"]), tuple(np.asarray(meta["freqs"]).tolist()),
+            str(meta["spacing"]))
 
 
 def main():
     p = ArgumentParser(description=__doc__)
     p.add_argument("--root", default=".")
+    p.add_argument("--spacing", choices=["uniform", "poisson"], default="uniform",
+                   help="Which result set to aggregate (main paper: uniform; "
+                        "supplement: poisson). Reads results/recovery/<spacing>/.")
     p.add_argument("--out", default=None,
                    help="Optional path to write the LaTeX table")
     args = p.parse_args()
 
-    rec_dir = Path(args.root).joinpath("results", "recovery")
-    files = sorted(rec_dir.glob("*_seed-*.npz"))
+    rec_dir = em.resolve_rec_dir(args.root, args.spacing)
+    files = sorted(f for f in rec_dir.glob("*_seed-*.npz") if f.parent == rec_dir)
     if not files:
         raise SystemExit(f"No <method>_seed-*.npz found in {rec_dir}")
 
@@ -81,7 +86,8 @@ def main():
         if key not in gt_cache:
             gt_cache[key] = em.gt_clean_prototypes(
                 meta["freqs"], meta["seed"], wave_len=meta["m"],
-                n_waves=meta["n_waves"], noise_std=meta["noise_std"])
+                n_waves=meta["n_waves"], noise_std=meta["noise_std"],
+                spacing=meta["spacing"])
         gt_protos, gt_freqs, _ = gt_cache[key]
 
         if protos.shape[0] == 0:      # method failed to return prototypes
@@ -112,13 +118,16 @@ def main():
 
     # LaTeX
     header = " & ".join(["Method"] + [hdr for _, hdr, *_ in METRICS])
+    spacing_phrase = ("uniformly-spaced" if args.spacing == "uniform"
+                      else "Poisson-spaced (overlapping)")
+    label = "tab:recovery" if args.spacing == "uniform" else "tab:recovery_poisson"
     lines = [
         r"\begin{table}[htb]",
         r"    \centering",
         r"    \caption{Ground-truth recovery on the \texttt{power-law} dataset "
-        r"(mean $\pm$ 95\% CI over seeds). $\uparrow$/$\downarrow$: higher/lower "
-        r"is better. \#freq is out of 6.}",
-        r"    \label{tab:recovery}",
+        r"(" + spacing_phrase + r" wavelets; mean $\pm$ 95\% CI over seeds). "
+        r"$\uparrow$/$\downarrow$: higher/lower is better. \#freq is out of 6.}",
+        r"    \label{" + label + "}",
         r"    \resizebox{\linewidth}{!}{%",
         r"    \begin{tabular}{l" + "c" * len(METRICS) + "}",
         r"    \toprule",

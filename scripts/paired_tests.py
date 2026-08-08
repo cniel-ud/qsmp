@@ -51,11 +51,12 @@ def score_method(rec_dir, method, gt_cache):
         protos, meta = em.load_prototypes(f)
         seed = int(meta["seed"])
         key = (seed, int(meta["m"]), int(meta["n_waves"]),
-               float(meta["noise_std"]))
+               float(meta["noise_std"]), str(meta["spacing"]))
         if key not in gt_cache:
             gt_cache[key] = em.gt_clean_prototypes(
                 np.asarray(meta["freqs"]), seed, wave_len=int(meta["m"]),
-                n_waves=int(meta["n_waves"]), noise_std=float(meta["noise_std"]))
+                n_waves=int(meta["n_waves"]), noise_std=float(meta["noise_std"]),
+                spacing=str(meta["spacing"]))
         gt_protos, gt_freqs, _ = gt_cache[key]
         protos = np.atleast_2d(protos)
         if protos.shape[0] == 0:
@@ -110,10 +111,14 @@ def main():
                    help="Second method (default: snippetfinder)")
     p.add_argument("--metrics", nargs="+", default=list(METRICS),
                    choices=list(METRICS), help="Metrics to test")
+    p.add_argument("--spacing", choices=["poisson", "uniform"], default="poisson",
+                   help="Which result set to test (default poisson, the "
+                        "supplement's harder signal). Reads "
+                        "results/recovery/<spacing>/.")
     args = p.parse_args()
 
-    rec_dir = Path(args.root).joinpath("results", "recovery")
-    if not any(rec_dir.glob("*_seed-*.npz")):
+    rec_dir = em.resolve_rec_dir(args.root, args.spacing)
+    if not any(f.parent == rec_dir for f in rec_dir.glob("*_seed-*.npz")):
         raise SystemExit(f"No prototype files found in {rec_dir}")
 
     gt_cache = {}

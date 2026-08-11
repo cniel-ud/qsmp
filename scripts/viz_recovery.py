@@ -346,11 +346,15 @@ def main():
                         "results/recovery/<spacing>/.")
     p.add_argument("--seed", type=int, default=None,
                    help="Force the gallery seed (default: representative seed)")
+    p.add_argument("--format", default="png", choices=["png", "pdf"],
+                   help="Output format. 'pdf' gives vector figures for the "
+                        "paper/supplement; 'png' (default) for quick viewing.")
     args = p.parse_args()
 
     rec_dir = em.resolve_rec_dir(args.root, args.spacing)
     fig_dir = rec_dir.joinpath("figs")
     fig_dir.mkdir(parents=True, exist_ok=True)
+    ext = args.format
 
     protos, gt_cache = load_all(rec_dir)
     if not protos:
@@ -359,18 +363,18 @@ def main():
 
     seed = args.seed if args.seed is not None else \
         pick_representative_seed(protos, gt_cache)
-    g_path = fig_dir.joinpath(f"gallery_seed-{seed}.png")
+    g_path = fig_dir.joinpath(f"gallery_seed-{seed}.{ext}")
     fig_gallery(protos, gt_cache, seed, g_path)
     print(f"wrote {g_path} (representative seed {seed})")
 
     cov, mult, nseed = coverage_and_multiplicity(protos, gt_cache)
-    fig_coverage(cov, nseed, fig_dir.joinpath("coverage_heatmap.png"))
-    print(f"wrote {fig_dir.joinpath('coverage_heatmap.png')}")
-    fig_multiplicity(mult, nseed, fig_dir.joinpath("collapse_multiplicity.png"))
-    print(f"wrote {fig_dir.joinpath('collapse_multiplicity.png')}")
+    fig_coverage(cov, nseed, fig_dir.joinpath(f"coverage_heatmap.{ext}"))
+    print(f"wrote {fig_dir.joinpath(f'coverage_heatmap.{ext}')}")
+    fig_multiplicity(mult, nseed, fig_dir.joinpath(f"collapse_multiplicity.{ext}"))
+    print(f"wrote {fig_dir.joinpath(f'collapse_multiplicity.{ext}')}")
     fig_metric_distributions(protos, gt_cache,
-                             fig_dir.joinpath("metric_distributions.png"))
-    print(f"wrote {fig_dir.joinpath('metric_distributions.png')}")
+                             fig_dir.joinpath(f"metric_distributions.{ext}"))
+    print(f"wrote {fig_dir.joinpath(f'metric_distributions.{ext}')}")
 
 
 if __name__ == "__main__":

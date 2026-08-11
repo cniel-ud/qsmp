@@ -8,15 +8,12 @@ from time import perf_counter
 
 # t_start = perf_counter()
 
-class Args:
-    root = '..'
-
-args = Args()
-
-root = Path(args.root)
+# Repo root, resolved from this file's location so the script works regardless
+# of the current working directory (e.g. run from the repo root or notebooks/).
+root = Path(__file__).resolve().parent.parent
 data_dir = root.joinpath('data/MixedBag')
 results_dir = root.joinpath('results/MixedBag')
-results_dir.mkdir(exist_ok=True)
+results_dir.mkdir(parents=True, exist_ok=True)
 expr = r'^.+_(?P<split_point>\d+)_(?P<sublen>\d+).txt$'
 p = re.compile(expr)
 #%%

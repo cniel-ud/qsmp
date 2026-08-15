@@ -259,16 +259,19 @@ def fig_coverage(cov, nseed, out_path):
     fig, ax = plt.subplots(figsize=(1.1 * ALPHABET.size + 1.5, 0.9 * len(methods) + 1.5))
     im = ax.imshow(M, cmap="viridis", vmin=0, vmax=1, aspect="auto")
     ax.set_xticks(range(ALPHABET.size))
-    ax.set_xticklabels([f"{f} Hz" for f in ALPHABET])
+    ax.set_xticklabels([f"{f} Hz" for f in ALPHABET], fontsize=14)
     ax.set_yticks(range(len(methods)))
-    ax.set_yticklabels([METHOD_LABEL[m] for m in methods])
+    ax.set_yticklabels([METHOD_LABEL[m] for m in methods], fontsize=14)
     for i in range(len(methods)):
         for j in range(ALPHABET.size):
             v = M[i, j]
             ax.text(j, i, f"{v:.2f}", ha="center", va="center",
-                    color="white" if v < 0.6 else "black", fontsize=9)
-    ax.set_title("Fraction of seeds in which each frequency is recovered")
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="recovery rate")
+                    color="white" if v < 0.6 else "black", fontsize=13)
+    ax.set_title("Fraction of seeds in which each frequency is recovered",
+                 fontsize=15)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="recovery rate")
+    cb.set_label("recovery rate", fontsize=14)
+    cb.ax.tick_params(labelsize=12)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
@@ -285,11 +288,13 @@ def fig_multiplicity(mult, nseed, out_path):
     ax.axhline(1.0, color="0.4", ls="--", lw=1,
                label="1 prototype (ideal)")
     ax.set_xticks(x)
-    ax.set_xticklabels([f"{f} Hz" for f in ALPHABET])
-    ax.set_ylabel("mean # recovered prototypes")
+    ax.set_xticklabels([f"{f} Hz" for f in ALPHABET], fontsize=14)
+    ax.tick_params(axis="y", labelsize=12)
+    ax.set_ylabel("mean # recovered prototypes", fontsize=14)
     ax.set_title("Where each method spends its k=6 prototypes\n"
-                 "(>1 = collapse/redundancy; 0 = frequency starved)")
-    ax.legend(fontsize=9)
+                 "(>1 = collapse/redundancy; 0 = frequency starved)",
+                 fontsize=15)
+    ax.legend(fontsize=12)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)

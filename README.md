@@ -13,9 +13,10 @@ min-pooling filter and amenable to multi-GPU acceleration.
 
 The reference algorithm and experiments are described in:
 
-> Mendoza-Cardenas, C. H., Brockmeier, A. J. *QSMP: finding representative
-> time series subsequences through Quick Shift + Matrix Profile*. (Under
-> resubmission.)
+> Mendoza-Cardenas, C. H., Silva, R. F., Brockmeier, A. J. *QSMP: finding
+> representative time series subsequences through Quick Shift + Matrix
+> Profile*. 2026 IEEE International Workshop on Machine Learning for Signal
+> Processing (MLSP), 2026.
 
 ## Repository layout
 
@@ -107,14 +108,16 @@ exploration of the QS tree, and the checkpointing behaviour.
 
 ## Citation
 
-> _Placeholder — to be replaced once the resubmission is accepted._
+If you use this code, please cite:
 
 ```bibtex
-@inproceedings{mendozacardenas_qsmp_TBD,
+@inproceedings{mendozacardenas2026qsmp,
   title     = {QSMP: finding representative time series subsequences through Quick Shift + Matrix Profile},
-  author    = {Mendoza-Cardenas, Carlos H. and Brockmeier, Austin J.},
-  booktitle = {Proceedings of TBD},
-  year      = {TBD},
+  author    = {Mendoza-Cardenas, Carlos H. and Silva, Rogers F. and Brockmeier, Austin J.},
+  booktitle = {2026 IEEE International Workshop on Machine Learning for Signal Processing (MLSP)},
+  year      = {2026},
+  publisher = {IEEE},
+  % TODO: add pages and DOI once the proceedings are published; arXiv preprint link when available.
 }
 ```
 

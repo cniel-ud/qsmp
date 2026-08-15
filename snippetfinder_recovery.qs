@@ -23,7 +23,7 @@
 #SBATCH --output=%x_%A-%a.out
 #SBATCH --error=%x_%A-%a.err
 #SBATCH --requeue
-#SBATCH --mail-user=cmendoza@udel.edu
+#SBATCH --mail-user=you@example.com
 #SBATCH --mail-type=END,FAIL
 
 echo "Job running on host: $HOSTNAME"
@@ -31,18 +31,16 @@ echo "Array task (seed): ${SLURM_ARRAY_TASK_ID}"
 start=$(date "+%s")
 
 # --- Environment ------------------------------------------------------------
-# Dedicated conda env with STUMPY (see docs/RECOVERY_EXPERIMENT.md).
-vpkg_require anaconda/2024.02
-conda activate /home/1420/sw/conda/snippetfinder
-
-# Do standard UD environment setup (thread limits etc.).
-. /opt/shared/slurm/templates/libexec/common.sh 2>/dev/null || true
+# Activate a conda env that has STUMPY installed (adapt to your cluster). Some
+# clusters require loading anaconda as a module first, e.g. `module load
+# anaconda` (or `vpkg_require anaconda/<version>` on UD Caviness).
+conda activate snippetfinder            # name or path of your STUMPY env
 
 # Keep thread libraries within the allocated cores.
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-16}
 export NUMBA_NUM_THREADS=${SLURM_CPUS_PER_TASK:-16}
 
-ROOT_DIR="${HOME}/sw/qsmp"
+ROOT_DIR="${HOME}/qsmp"                 # path to your clone of this repo
 EXEC_DIR="${ROOT_DIR}/scripts"
 
 # The snippetfinder conda env does not install the qsmp package (it only needs
@@ -57,7 +55,7 @@ N_WAVES=1000
 
 cd "${ROOT_DIR}" || exit 1
 
-UD_EXEC python "${EXEC_DIR}/snippetfinder_recovery.py" \
+python "${EXEC_DIR}/snippetfinder_recovery.py" \
     --root "${ROOT_DIR}" \
     --seed "${SLURM_ARRAY_TASK_ID}" \
     --subseq-len "${SUBSEQ_LEN}" \

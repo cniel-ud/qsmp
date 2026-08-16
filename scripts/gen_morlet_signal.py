@@ -1,4 +1,4 @@
-"""Generate the synthetic power-law (Morlet) dataset used in §5.2.
+"""Generate the synthetic power-law (Morlet) dataset used in §4.1.
 
 Produces a 1,000-second signal at 512 Hz built from six 1-second Morlet
 wavelets at frequencies (1, 5, 12, 30, 100, 150) Hz, drawn from a power-law

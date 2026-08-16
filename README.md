@@ -27,20 +27,25 @@ qsmp/
 │   ├── gpu_density.py         # GPU kernel + driver for the kernel-density estimate (Algorithm 1)
 │   ├── gpu_qsmp.py            # GPU kernel + driver for shift-invariant NN-distance/NN-index (Algorithm 2)
 │   ├── tree.py                # Tree-cutting, root merging, mode/neighbor extraction, binary-search of tau
-│   ├── datasets.py            # Synthetic Morlet-wavelet generator (power-law dataset, §5.1)
+│   ├── datasets.py            # Synthetic Morlet-wavelet generator (power-law dataset, §4.1)
 │   ├── config.py              # Numerical thresholds and GPU-block tunables
 │   ├── utils/                 # Windows, MATLAB v7.3 loader, file-naming helpers
 │   ├── viz/                   # Matplotlib plots + interactive ipywidgets app for exploring modes
 │   ├── shift_kmeans/          # Shift-invariant k-means baseline (sikmeans, ref [12])
 │   └── alphacsc/              # Convolutional sparse-coding helpers (used by some plots)
 ├── scripts/                   # Reproducibility entry points
-│   ├── gen_morlet_signal.py   # Generate the synthetic power-law dataset (§5.2)
-│   ├── qsmp_on_morlet.py      # Run QSMP on the synthetic dataset (§5.2-5.4)
-│   ├── qsmp_on_ecog.py        # Run QSMP on Study019 preictal/interictal (§5.4-5.5)
-│   ├── sikmeans.py            # Run sikmeans baseline (§5.5, §5.6)
+│   ├── eval_recovery.py       # QSMP + sikmeans recovery runner (Table 1, §4.1)
+│   ├── snippetfinder_recovery.py  # Snippet-Finder recovery runner (Table 1, §4.1)
+│   ├── aggregate_recovery.py  # Score recovery metrics -> Table 1 (see docs/RECOVERY_EXPERIMENT.md)
+│   ├── fig_synthetic_patterns.py  # Qualitative QSMP vs SF vs sikmeans figure (§4.1)
+│   ├── qsmp_on_ecog.py        # Run QSMP on Study019 preictal/interictal (§4.2)
+│   ├── sikmeans.py            # Run sikmeans baseline (§4.2)
+│   ├── gen_morlet_signal.py   # Generate the synthetic power-law dataset
+│   ├── qsmp_on_morlet.py      # Exploratory QSMP run on the synthetic dataset
 │   └── build_report.py        # Render top-mode + neighbor figures into a multi-page PDF
 ├── notebooks/                 # Exploratory notebooks + the MixedBag pipeline
-│   └── QSMP_on_MixedBag.py    # Reproduces Table 1 (§5.6)
+│   ├── QSMP_on_MixedBag.py    # QSMP MixedBag runner (Table 2, §4.3)
+│   └── sikmeans_on_MixedBag.py  # sikmeans MixedBag runner (Table 2, §4.3)
 ├── data/
 │   ├── MixedBag/              # 100 time series from Snippet-Finder [9]
 │   └── study019-preictal/
@@ -96,9 +101,9 @@ uv pip install -e .
 See [`docs/REPRODUCING.md`](docs/REPRODUCING.md) for step-by-step instructions
 covering the three experiments:
 
-- §5.2 — Power-law (Morlet) synthetic dataset
-- §5.4–5.5 — Study019 ECoG (preictal/interictal)
-- §5.6 — MixedBag binary-segment task
+- §4.1 — Power-law (Morlet) synthetic recovery (Table 1)
+- §4.2 — Study019 ECoG (preictal/interictal)
+- §4.3 — MixedBag binary-segment task (Table 2)
 
 ## Running QSMP on new data
 

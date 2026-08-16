@@ -18,7 +18,7 @@ prototype window from a mixture. Evidence produced here:
 - [A] a *constructed* window spliced from two half-prototypes has MPdist ~ 0
   to BOTH prototypes (perfect match under SF's measure) while the full-window
   shift-invariant cosine correctly penalises it;
-- [B] per matched pair (Hungarian, as in ``eval_metrics``): SF's *median*
+- [B] per matched pair (best match, with replacement, as in ``eval_metrics``): SF's *median*
   cosine equals QSMP's (a clean SF window is as good as a QSMP mode) but SF
   has ~2x QSMP's fraction of poor pairs (cos < 0.5) and lower spectral
   purity. Averaging is not the protective factor: sikmeans averages and has
@@ -31,14 +31,15 @@ covering them barely moves the objective. Evidence produced here:
 
 - [C] poor pairs concentrate at 100/150 Hz, and the MPdist between those poor
   snippets and their assigned ground truth sits at the noise baseline --
-  i.e. SF never *selected* high-frequency windows; the Hungarian matcher
-  paired leftovers (several of which peak at 1 Hz).
+  i.e. SF never *selected* high-frequency windows: even its closest snippet to
+  each high-frequency ground truth sits at the MPdist noise floor.
 
 **Fairness check -- score recovery under SF's own distance.** One could
 object that CosSim measures a property (whole-window morphology) that SF's
 objective never optimises, so the comparison is rigged. Section [D] therefore
 re-scores every method's recovery with *MPdist itself* as the matching
-distance (Hungarian-matched mean MPdist to the clean ground truth). QSMP
+distance (mean MPdist to the clean ground truth, matched with replacement).
+QSMP
 still wins, significantly: mechanism 1 explains SF's contaminated-window
 tail, but mechanism 2 (rare-frequency starvation) hurts under *any*
 distance -- a snippet that was never selected to represent 150 Hz is far from
@@ -276,7 +277,7 @@ def report_sf_highfreq_leftovers(sf_pairs, L, m, n_mpdist=6):
 # [D] Fairness check: recovery scored under SF's own distance (MPdist)
 # --------------------------------------------------------------------------- #
 def report_mpdist_recovery(rec_dir, gt_cache, L):
-    """Hungarian-matched mean MPdist to ground truth, per method + paired test.
+    """Mean MPdist to ground truth (best match, with replacement), per method + paired test.
 
     Same protocol as ``prototype_recovery`` but with MPdist as the matching
     distance -- i.e. each method is scored under the lenient, fragment-level,

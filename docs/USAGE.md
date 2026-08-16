@@ -71,7 +71,7 @@ The `.npz` files written by the scripts contain:
 | `indices` | `(N, n_σ)`  | NN-index (which higher-density subsequence each one points to) |
 
 with `N = n - m + 1` and `n_σ = len(sigma)`. Together, `(density, profile, indices)`
-form the **QS-tuple** described in §3.4 of the paper.
+form the **QS-tuple** defined in §3.2 of the paper.
 
 ## Interactive exploration
 

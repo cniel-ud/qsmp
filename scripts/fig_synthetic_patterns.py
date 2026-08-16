@@ -1,16 +1,9 @@
 """Main-paper synthetic figure: the patterns each method returns.
 
-Regenerates the qualitative ``power-law`` comparison figure (QSMP vs.
-Snippet-Finder vs. sikmeans) directly from the *saved, unsupervised-selected*
-prototypes (``results/recovery/<spacing>/``), so the figure uses the same
-methodology and configuration as the quantitative recovery table -- rather than
-hand-tuned per-method parameters. No method is re-run.
-
-Layout mirrors the original figure: one row per method, one column per returned
-pattern (k), each pattern z-normalised, drawn, and titled with its peak
-frequency. Within a row, patterns are ordered by peak frequency so misses and
-duplicates are easy to see. The seed is chosen automatically as the one whose
-per-method number of recovered frequencies is jointly closest to each method's
+One row per method, one column per returned pattern (k), each pattern z-normalised, 
+drawn, and titled with its peak frequency. Within a row, patterns are ordered by 
+peak frequency so misses and duplicates are easy to see. The seed is chosen automatically
+as the one whose per-method number of recovered frequencies is jointly closest to each method's
 mean (not cherry-picked), or forced with ``--seed``.
 
 CPU only::

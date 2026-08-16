@@ -1,21 +1,10 @@
 """Supplement figure: effect of shift-aligned averaging on returned prototypes.
 
-Addresses the reviewer's intuition that raw returned waveforms preserve noise
-while *averaging* their occurrences denoises them. For each prototype a method
-returns (a QSMP mode or a Snippet-Finder snippet), we locate its nearest
-occurrences in the signal with a sliding-window z-normalised distance profile
-(``stumpy.match``; the sliding search handles the shift, a trivial-match
+For each prototype a method returns (a QSMP mode or a Snippet-Finder snippet), 
+we locate its nearest occurrences in the signal with a sliding-window z-normalised 
+distance profile (``stumpy.match``; the sliding search handles the shift, a trivial-match
 exclusion zone prevents self-overlap), take a FIXED top-10, and average the
 z-normalised windows. The same procedure is applied to both methods.
-
-The story is deliberately two-sided (reviewer decision "2+3"):
-  * Averaging denoises the *common* frequencies (their occurrences are plentiful,
-    so all 10 windows are genuine): cosine-to-ground-truth goes up.
-  * A fixed top-10 *cannot rescue the rarest* frequencies: e.g. 150 Hz has only a
-    handful of activations, so most of the 10 windows are unrelated/superimposed
-    segments and the average is worse than the raw waveform. This is a limitation
-    of averaging, not of either method, and it is stated as such in the caption
-    and supplement text.
 
 sikmeans is intentionally omitted: its centroids are already averages.
 

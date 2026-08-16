@@ -6,10 +6,6 @@ import numpy as np
 from pathlib import Path
 from time import perf_counter
 
-# t_start = perf_counter()
-
-# Repo root, resolved from this file's location so the script works regardless
-# of the current working directory (e.g. run from the repo root or notebooks/).
 root = Path(__file__).resolve().parent.parent
 data_dir = root.joinpath('data/MixedBag')
 results_dir = root.joinpath('results/MixedBag')
@@ -20,9 +16,6 @@ p = re.compile(expr)
 k = 2  # Number of clusters
 metric, init = 'cosine', 'random'
 n_runs, rng = 10, 13
-# Subsequence length m is FIXED to the per-series default in the file name
-# (eta=1), matching the Snippet-Finder MATLAB harness and the QSMP driver, so
-# every method uses the same m per series (no tuning m to the success metric).
 w_scale = np.r_[1.1, 1.25, 1.5, 2.0]
 n_w_scale = len(w_scale)
 file_list = list(data_dir.iterdir())

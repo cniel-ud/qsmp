@@ -39,8 +39,7 @@ object that CosSim measures a property (whole-window morphology) that SF's
 objective never optimises, so the comparison is rigged. Section [D] therefore
 re-scores every method's recovery with *MPdist itself* as the matching
 distance (mean MPdist to the clean ground truth, matched with replacement).
-QSMP
-still wins, significantly: mechanism 1 explains SF's contaminated-window
+QSMP still wins, significantly: mechanism 1 explains SF's contaminated-window
 tail, but mechanism 2 (rare-frequency starvation) hurts under *any*
 distance -- a snippet that was never selected to represent 150 Hz is far from
 the 150 Hz prototype no matter how leniently you compare waveforms.

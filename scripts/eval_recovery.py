@@ -75,12 +75,7 @@ def run_qsmp(T, splice, m, sigma, minfilt, k, root, params_str, window,
 
     # For each sigma, binary-search tau for exactly k modes; among the sigmas
     # that succeed, keep the one whose k modes are the most mutually DISTINCT,
-    # i.e. that maximises the minimum pairwise shift-invariant distance between
-    # modes. This is an unsupervised (ground-truth-free) criterion that encodes
-    # QSMP's actual goal -- k *distinct* representatives. It deliberately
-    # replaces the older "smallest total NN-distance" tie-break, which rewards
-    # tight (hence redundant) clusters and so prefers a sigma whose k modes
-    # collapse onto the few most-prevalent frequencies.
+    # i.e. that maximises the minimum pairwise shift-invariant distance between modes.
     max_lag = m // 4
     best = None
     for si in range(sigma.size):
@@ -204,8 +199,6 @@ def main():
     args = p.parse_args()
 
     root = Path(args.root)
-    # Keep uniform (main-paper) and poisson (supplement) sets in separate
-    # subdirs so they never collide and each can be aggregated independently.
     out_dir = root.joinpath("results", "recovery", args.spacing)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -218,9 +211,7 @@ def main():
 
     # --- dataset (no ground truth needed here; scoring is in the aggregator) --
     # Deterministic in the seed, so every machine/method sees the same signal
-    # and the aggregator can re-derive the matching ground truth. 'poisson'
-    # spacing lets overlapping wavelets superimpose (harder); 'uniform' tiles
-    # them edge-to-edge (each window is one clean wavelet).
+    # and the aggregator can re-derive the matching ground truth.
     T, _, _, _ = powerlaw_dataset(
         FREQS, seed=args.seed, fs=512, wave_len=m, n_waves=args.n_waves,
         noise_std=args.noise_std, spacing=args.spacing)

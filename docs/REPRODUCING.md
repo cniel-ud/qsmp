@@ -20,7 +20,7 @@ prevalence, plus Gaussian noise (σ=0.07).
 The main-paper quantitative result (**Table 1**) is the **ground-truth recovery
 experiment**: it scores how well QSMP, Snippet-Finder, and sikmeans recover the
 known prototypes, with each method's hyperparameter chosen by its own
-**unsupervised** criterion (no tuning to the ground truth). It is documented
+**unsupervised** criterion. It is documented
 end-to-end — metrics (FreqRec, CosSim, PeakErr), matching, spacing, and
 per-method selection — in
 [`RECOVERY_EXPERIMENT.md`](RECOVERY_EXPERIMENT.md). In brief:
@@ -115,8 +115,7 @@ For each series the subsequence length `m` is **fixed** to the per-series
 default provided with the dataset (encoded in the file name); the QS tree is
 cut (binary search on `tau`) to exactly 2 modes, and a run is a *success* when
 the two modes fall on opposite sides of the known split point (within an
-`m`-sized tolerance). The remaining hyperparameter is chosen **unsupervised**
-(never tuned to the success label): QSMP sweeps
+`m`-sized tolerance). The remaining hyperparameter is chosen **unsupervised**: QSMP sweeps
 `σ ∈ {0.1, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5}` and keeps the width that
 maximizes the separation between the two modes; sikmeans keeps the window
 length that minimizes clustering distortion. Snippet-Finder is **not** re-run

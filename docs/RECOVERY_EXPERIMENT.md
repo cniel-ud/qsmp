@@ -131,19 +131,14 @@ step (`pip install stumpy`).
   matching ground truth. The chosen `spacing` is recorded in each `.npz`, so the
   aggregator re-derives the matching ground truth regardless of which subdir a
   file lives in.
-- **Parameter selection is unsupervised.** Parameters are *not* hand-picked and
-  are
-  *never* tuned to the recovery metric (that would leak the ground truth and
-  make the comparison circular). Instead every method sweeps a grid and selects
+- **Parameter selection is unsupervised.** Every method sweeps a grid and selects
   its configuration by its **own internal, ground-truth-free objective**, then
   that single selected configuration is scored:
   - **QSMP `sigma`** — the tree is cut (by binary search on the distance
     threshold `tau`) to exactly `k` modes for each width; the width kept is the
     one that **maximises the minimum pairwise shift-invariant distance between
     its `k` modes** (max-min diversity). This encodes QSMP's goal of `k`
-    *distinct* representatives. (It replaces an earlier min-total-NN-distance
-    tie-break, which rewarded tight — hence redundant — clusters and so
-    preferred a width whose modes collapse onto the most-prevalent frequencies.)
+    *distinct* representatives.
   - **sikmeans `window-len`** — swept; the length with the smallest clustering
     **distortion** (mean inertia, comparable across window counts under cosine +
     z-normalisation) is kept.

@@ -119,7 +119,9 @@ python scripts/sigma_selection_analysis.py --root . --seed 18
 Steps 1 and 2 are embarrassingly parallel over seeds and are convenient to run
 as job-array tasks on a cluster (one seed per task); `snippetfinder_recovery.qs`
 is an example SLURM array script. `stumpy` is required for the Snippet-Finder
-step (`pip install stumpy`).
+step (`pip install stumpy`). If the GPU step (QSMP/sikmeans) and the CPU step
+(Snippet-Finder) run on different machines, copy the per-seed `.npz` files into
+a single `results/recovery/<spacing>/` directory before running step 3.
 
 ## Notes
 

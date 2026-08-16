@@ -10,8 +10,8 @@ confidence intervals:
 
 - ``n_freqs_recovered`` -- how many of the ground-truth frequencies each method
   recovers.
-- ``recovery_error`` -- the morphology error of the matched prototypes (a
-  shift-invariant z-normalised distance).
+- ``recovery_cosine`` -- the morphology similarity of the matched prototypes (a
+  shift-invariant cosine similarity; ``1`` = identical).
 - ``peak_freq_error`` -- the peak-frequency error in Hz.
 
 Everything here is pure NumPy / SciPy and runs on CPU, so the measurement logic
@@ -315,8 +315,6 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
         ``n_freqs_recovered`` : distinct ground-truth frequencies whose peak is
         hit by at least one predicted prototype.
         ``n_freqs_total`` : number of ground-truth frequencies present.
-        ``recovery_error`` : mean shift-invariant z-norm distance of the
-        matched (ground truth -> prototype) pairs. Lower is better.
         ``recovery_cosine`` : mean shift-invariant cosine similarity of the
         matched pairs (``1`` = identical morphology). Higher is better.
         ``peak_freq_error`` : mean |estimated - true| peak frequency (Hz) over
@@ -351,12 +349,11 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
     else:
         raise ValueError(f"matching must be 'best' or 'hungarian', got {matching!r}")
     d_pairs = D[pred_idx, gt_idx]
-    recovery_error = float(d_pairs.mean())
     # Shift-invariant cosine similarity of the matched pairs. For z-normalised
-    # waveforms cos = 1 - d^2/2 (same measure recovery_error derives from), but
-    # we average the *per-pair* cosine -- the mean does not commute with the
-    # non-linear 1 - d^2/2, so converting the aggregate recovery_error would be
-    # wrong. This is the more interpretable morphology score (1 = identical).
+    # waveforms cos = 1 - d^2/2, but we average the *per-pair* cosine -- the mean
+    # does not commute with the non-linear 1 - d^2/2, so converting an aggregate
+    # distance would be wrong. This is the interpretable morphology score
+    # (1 = identical).
     recovery_cosine = float(np.mean(1.0 - d_pairs ** 2 / 2.0))
     peak_err = float(np.mean([
         abs(pred_peaks[r] - gt_freqs[c]) for r, c in zip(pred_idx, gt_idx)
@@ -364,7 +361,6 @@ def prototype_recovery(pred_protos, gt_protos, gt_freqs, *, fs=512,
     return dict(
         n_freqs_recovered=int(n_recovered),
         n_freqs_total=int(gt_freqs.size),
-        recovery_error=recovery_error,
         recovery_cosine=recovery_cosine,
         peak_freq_error=peak_err,
     )
@@ -389,7 +385,6 @@ if __name__ == "__main__":
     oracle = prototype_recovery(gt_protos, gt_protos, gt_freqs)
     print(f"[self-test] oracle recovery : {oracle}")
     assert oracle["n_freqs_recovered"] == gt_freqs.size
-    assert oracle["recovery_error"] < 1e-6
     assert oracle["recovery_cosine"] > 1.0 - 1e-6
     assert oracle["peak_freq_error"] == 0.0
 
@@ -398,7 +393,6 @@ if __name__ == "__main__":
     coll = prototype_recovery(collapse, gt_protos, gt_freqs)
     print(f"[self-test] collapse recovery : {coll}")
     assert coll["n_freqs_recovered"] == 1
-    assert coll["recovery_error"] > oracle["recovery_error"]
     assert coll["recovery_cosine"] < oracle["recovery_cosine"]
 
     # Both matching modes recover the oracle perfectly. They differ on

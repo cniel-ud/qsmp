@@ -15,10 +15,7 @@ and the paper reports two variants:
 - **`poisson`** — activations are scattered with Poisson (non-uniform) spacing,
   so nearby wavelets *superimpose additively* and a window is generally a
   partial superposition of overlapping wavelets. This harder variant backs the
-  **supplement**. The methods still recover the underlying shapes because the
-  interference is sparse and, pooled over the ~1000 instances, incoherent (it
-  averages toward zero, like the additive noise), while the shared prototype
-  survives.
+  **supplement**.
 
 Results are written under `results/recovery/<spacing>/`, so the two never
 collide.
@@ -33,14 +30,9 @@ complementary, method-agnostic **prototype-recovery** metrics (defined in
   frequencies the method recovers (each returned prototype is assigned to the
   nearest alphabet frequency by its spectral peak; count the distinct
   frequencies hit).
-- **CosSim** (`recovery_cosine`) — the primary morphology metric: the mean
+- **CosSim** (`recovery_cosine`) — the morphology metric: the mean
   shift-invariant cosine similarity of the matched prototype→ground-truth pairs
-  (`1` = identical morphology). This is the interpretable score reported in the
-  main table.
-- **RecErr** (`recovery_error`) — the mean shift-invariant, z-normalised
-  Euclidean distance of the matched pairs. It is essentially redundant with
-  CosSim (rank-correlated ≈ −0.99, since `cos = 1 − d²/2`), so the main-paper
-  table drops it and only the supplement table reports it alongside CosSim.
+  (`1` = identical morphology).
 - **PeakErr** (`peak_freq_error`) — mean absolute error (Hz) between each matched
   prototype's spectral peak and the true frequency.
 
@@ -68,7 +60,7 @@ no re-run, and the methods can be produced in any order.
 
 | File | Role | Needs |
 |---|---|---|
-| `qsmp/eval_metrics.py` | Ground-truth prototypes, the recovery metrics (FreqRec, CosSim, RecErr, PeakErr) with `matching="best"`, spacing-aware path helper, and the `save_prototypes`/`load_prototypes` file format (records `spacing`). Has a `__main__` self-test. | CPU |
+| `qsmp/eval_metrics.py` | Ground-truth prototypes, the recovery metrics (FreqRec, CosSim, PeakErr) with `matching="best"`, spacing-aware path helper, and the `save_prototypes`/`load_prototypes` file format (records `spacing`). Has a `__main__` self-test. | CPU |
 | `scripts/eval_recovery.py` | Per-seed runner for QSMP + sikmeans; writes `results/recovery/<spacing>/{qsmp,sikmeans}_seed-<seed>.npz` (prototypes only). | GPU (QSMP) |
 | `scripts/snippetfinder_recovery.py` | Per-seed Snippet-Finder runner (via `stumpy.snippets`); writes `results/recovery/<spacing>/snippetfinder_seed-<seed>.npz`. | CPU |
 | `scripts/aggregate_recovery.py` | Scores every method's prototypes, pools per-seed → mean ± 95% CI → LaTeX table. | CPU |

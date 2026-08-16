@@ -37,7 +37,6 @@ from qsmp import eval_metrics as em
 METRICS = {
     "n_freqs_recovered": ("#freq recovered", True),
     "recovery_cosine": ("CosSim", True),
-    "recovery_error": ("RecErr", False),
     "peak_freq_error": ("PeakErr (Hz)", False),
 }
 METHOD_LABEL = {"qsmp": "QSMP", "snippetfinder": "Snippet-Finder",

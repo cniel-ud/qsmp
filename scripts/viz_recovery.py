@@ -183,7 +183,7 @@ def fig_gallery(protos, gt_cache, seed, out_path):
                 if gref is not None:
                     aligned, d = best_lag_align(P[j], gref)
                     # cosine similarity (shift-invariant): cos = 1 - d^2/2, the
-                    # same measure the RecErr distance is derived from.
+                    # CosSim morphology score the recovery metric reports.
                     cos = 1.0 - d ** 2 / 2.0
                     if cos > best_cos:
                         best_cos = cos

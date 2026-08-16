@@ -33,7 +33,6 @@ METHOD_ORDER = ["qsmp", "snippetfinder", "sikmeans"]
 METRICS = [
     ("n_freqs_recovered", r"\#freq $\uparrow$", "{:.1f}", True),
     ("recovery_cosine", r"CosSim $\uparrow$", "{:.2f}", True),
-    ("recovery_error", r"RecErr $\downarrow$", "{:.2f}", False),
     ("peak_freq_error", r"PeakErr (Hz) $\downarrow$", "{:.1f}", False),
 ]
 

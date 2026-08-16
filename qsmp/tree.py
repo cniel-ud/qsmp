@@ -342,7 +342,7 @@ def recompute_distances(NNindex, time_series, wave_length):
     n_roots = roots_idx.size
     max_chunk_size = 1024**3   # in bytes
     nbytes_per_wave = (wave_length*time_series.dtype.alignment)
-    max_num_of_rows = np.int(max_chunk_size/nbytes_per_wave)
+    max_num_of_rows = int(max_chunk_size/nbytes_per_wave)
     for i in range(n_roots):
 
         root_wave = utils.get_waves(roots_idx[i], time_series, wave_length)
@@ -353,7 +353,7 @@ def recompute_distances(NNindex, time_series, wave_length):
         children_idx = np.asarray(NNindex == roots_idx[i]).nonzero()[0]
         n_children = children_idx.size
         if n_children > max_num_of_rows:
-            n_chunks = np.int(n_children/max_num_of_rows) + 1
+            n_chunks = int(n_children/max_num_of_rows) + 1
             start = 0
             for _ in np.arange(n_chunks):
                 end = min(start+max_num_of_rows, n_children)

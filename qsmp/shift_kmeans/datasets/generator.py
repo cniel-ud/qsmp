@@ -16,9 +16,9 @@ def make_data(sample_length, sparsity, n_atoms, n_samples_per_comb, snr,
               data_path, name_prefix):
 
     n_nonzeros = n_atoms * sparsity
-    data_size = np.int(special.comb(n_atoms, n_nonzeros))*n_samples_per_comb
-    num_training_samples = np.int(0.7 * data_size)
-    num_validation_samples = np.int(0.2 * data_size)
+    data_size = int(special.comb(n_atoms, n_nonzeros))*n_samples_per_comb
+    num_training_samples = int(0.7 * data_size)
+    num_validation_samples = int(0.2 * data_size)
 
     # Generates the dictionary
     D = sindict(sample_length, n_atoms, np.float32)

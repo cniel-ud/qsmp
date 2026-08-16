@@ -102,8 +102,8 @@ def _compute_and_update_density_kernel(
         QT_out = QT_odd
         QT_in = QT_even
     for j in range(start, QT_out.shape[0], stride):
-        zone_start = max(0, j - excl_zone)
-        zone_stop = min(k, j + excl_zone)
+        zone_start = core.dev_max(0, j - excl_zone)
+        zone_stop = core.dev_min(k, j + excl_zone)
         if compute_QT:
             QT_out[j] = (
                 QT_in[j - 1] - T[i - 1] * T[j - 1]
@@ -138,10 +138,10 @@ def _compute_and_update_density_kernel(
 
         if centeredness.size > 0:
             D = D / centeredness[j]
-            if fwhm.size > 0 and centeredness[j] < max(fwhm[j], fwhm[i]):
-                    D = D * max(fwhm[j], fwhm[i])
+            if fwhm.size > 0 and centeredness[j] < core.dev_max(fwhm[j], fwhm[i]):
+                    D = D * core.dev_max(fwhm[j], fwhm[i])
         elif fwhm.size > 0:
-            D = D * max(fwhm[j], fwhm[i])
+            D = D * core.dev_max(fwhm[j], fwhm[i])
 
         n_sigma = sigma.size
         for ic in range(n_sigma):

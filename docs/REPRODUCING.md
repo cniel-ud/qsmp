@@ -11,60 +11,54 @@ parameter sweeps easy to enumerate.
 > partially without a GPU (the dataset generator), but the QSMP/density
 > computations require CUDA.
 
-## §5.2 — Power-law (Morlet) dataset
+## §4.1 — Power-law (Morlet) synthetic recovery
 
-Generates a 1,000-second synthetic time series at 512 Hz from six 1-second
-Morlet wavelets (1, 5, 12, 30, 100, 150 Hz) drawn from a power-law
-distribution, plus Gaussian noise (σ=0.07).
+The synthetic dataset is a 1,000-second time series at 512 Hz built from six
+1-second Morlet wavelets (1, 5, 12, 30, 100, 150 Hz) drawn from a power-law
+prevalence, plus Gaussian noise (σ=0.07).
 
-```sh
-# Generate the synthetic dataset
-python scripts/gen_morlet_signal.py --root .
-
-# Run QSMP on it (uses subsequence length m=512, kernel widths σ ∈ {0.9, 1.0, 2.0})
-python scripts/qsmp_on_morlet.py \
-    --root . \
-    --subseq-len 512 \
-    --sigma 0.9 1.0 2.0 \
-    --minfilt-size 256 \
-    --window-type rect \
-    --window-support 0.5
-
-# Build the figure of top modes + neighbors
-python scripts/build_report.py morlet \
-    --root . \
-    --subseq-len 512 \
-    --sigma 0.9 1.0 2.0 \
-    --minfilt-size 256 \
-    --window-type rect \
-    --window-support 0.5 \
-    --max-modes 6 \
-    --n-neighbors 9
-```
-
-The QSMP output is saved to
-`./results/morlet/qsmp_m-512_sigma-0.9_1.0_2.0_rect-50_minfilt-256.npz` and
-contains `density`, `profile` (NN-distance), `indices` (NN-index), `T`, and
-`splice`.
-
-To reproduce the panels in **Figure 5** (QSMP vs Snippet-Finder vs sikmeans),
-also run:
+The main-paper quantitative result (**Table 1**) is the **ground-truth recovery
+experiment**: it scores how well QSMP, Snippet-Finder, and sikmeans recover the
+known prototypes, with each method's hyperparameter chosen by its own
+**unsupervised** criterion. It is documented
+end-to-end — metrics (FreqRec, CosSim, PeakErr), matching, spacing, and
+per-method selection — in
+[`RECOVERY_EXPERIMENT.md`](RECOVERY_EXPERIMENT.md). In brief:
 
 ```sh
-python scripts/sikmeans.py morlet --root . --centroid-len 512 --window-len 768 --num-clusters 6
+# QSMP + sikmeans (GPU) and Snippet-Finder (CPU, via stumpy.snippets),
+# 20 seeds, uniform spacing (the main-paper signal).
+for s in $(seq 0 19); do
+    python scripts/eval_recovery.py --root . --seed $s --spacing uniform \
+        --subseq-len 512 --sigma 0.5 0.9 1 2 3 --minfilt-size 256 --k 6 \
+        --window-len 640 768 1024
+    python scripts/snippetfinder_recovery.py --root . --seed $s --spacing uniform \
+        --subseq-len 512 --k 6 --percentage 0.15 0.2 0.3 0.4 0.5
+done
+
+# Aggregate Table 1 and render the qualitative comparison figure from the
+# same saved, unsupervised-selected prototypes (so figure and table agree).
+python scripts/aggregate_recovery.py --root . --spacing uniform \
+    --out results/recovery/uniform/table.tex
+python scripts/fig_synthetic_patterns.py --root . --spacing uniform \
+    --out img/QSMP_vs_Snippet-Finder_vs_sikmeans_morlet.pdf
 ```
 
-The Snippet-Finder baseline is not reimplemented in this repo; use the
-authors' implementation from Imani et al., DAMI 2020 (ref [9]).
+The Snippet-Finder baseline runs via STUMPY's `stumpy.snippets`, so no external
+MATLAB implementation is needed.
 
-## §5.4–5.5 — Study019 ECoG dataset
+An older exploratory pipeline (`gen_morlet_signal.py` → `qsmp_on_morlet.py` →
+`build_report.py`, with a hand-picked σ grid) remains available for browsing
+top modes and their nearest neighbors, but it is *not* what produces the
+paper's Table 1 or the comparison figure.
+
+## §4.2 — Study019 ECoG dataset
 
 The preprocessed preictal segment is checked in at
 `data/study019-preictal/qsmp_T_splice.npz`. It contains:
 
 - `T` — float64 array of length 5,794,755 (the linearly-combined
-  single-channel ECoG, matching §5.1 — "first n=5,794,755 samples of
-  preictal")
+  single-channel ECoG — "first n=5,794,755 samples of preictal")
 - `splice` — int64 array of 55 splice indices (boundaries between
   concatenated raw segments, used to mask trivial cross-segment matches)
 
@@ -86,7 +80,7 @@ skips the .mat → .npz preprocessing step and the `-w` argument is not
 strictly required (the script will still parse it, but you can pass
 `-w /dev/null` or any path).
 
-The interictal segment used in §5.5 is **not** included in the repo. To
+The interictal segment (§4.2) is **not** included in the repo. To
 reproduce that part, or to regenerate the preictal `.npz` from scratch, you
 need:
 
@@ -106,20 +100,27 @@ need:
 > **TODO (data provenance).** Add a short script and pointer to the
 > upstream IEEG.org dataset and the CSP-filter computation.
 
-## §5.6 — MixedBag dataset
+## §4.3 — MixedBag dataset
 
 The 100 time series from Imani et al. (DAMI 2020) are checked in under
-`data/MixedBag/`. The reproducibility entry point is the script-style
-notebook:
+`data/MixedBag/`. Each series is split into two regimes at a known change
+point. The reproducibility entry points are the two script-style drivers:
 
 ```sh
-python notebooks/QSMP_on_MixedBag.py
+python notebooks/QSMP_on_MixedBag.py       # QSMP column of Table 2
+python notebooks/sikmeans_on_MixedBag.py   # sikmeans column of Table 2
 ```
 
-This sweeps `m_scale ∈ {1, 0.75, 0.5, 0.25}` and
-`σ ∈ {0.1, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5}`, runs QSMP on each time
-series, performs a binary search for the `tau` that yields exactly 2 modes,
-and tags as a *success* the runs where the two modes fall on opposite sides
-of the known split point (within an `m`-sized tolerance). The success rate is
-saved to `results/MixedBag/sucess_rate.pickle`. This reproduces **Table 1**
-(QSMP column) and **Tables 2 & 3**.
+For each series the subsequence length `m` is **fixed** to the per-series
+default provided with the dataset (encoded in the file name); the QS tree is
+cut (binary search on `tau`) to exactly 2 modes, and a run is a *success* when
+the two modes fall on opposite sides of the known split point (within an
+`m`-sized tolerance). The remaining hyperparameter is chosen **unsupervised**: QSMP sweeps
+`σ ∈ {0.1, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5}` and keeps the width that
+maximizes the separation between the two modes; sikmeans keeps the window
+length that minimizes clustering distortion. Snippet-Finder is **not** re-run
+here — the paper cites the authors' reported result at their fixed setting
+(`S = 50%`, Imani et al. 2020). Per-series successes are saved under
+`results/MixedBag/`. Together these reproduce the QSMP and sikmeans columns of
+**Table 2** (the success-rate comparison); random sampling is the analytical
+reference from the same paper.

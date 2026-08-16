@@ -76,7 +76,7 @@ def wave_matrix(X, hgap=4, vgap=None, ncols=None):
     X = np.vstack(list(map(np.ravel, X)))
     X = X[:, :-hgap]
 
-    nrows = np.int(nwav/ncols)
+    nrows = int(nwav/ncols)
 
     maxv = np.nanmax(X, axis=1)
     minv = np.nanmin(X, axis=1)
